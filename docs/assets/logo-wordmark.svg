@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200" role="img" aria-label="polars-llm">
+  <title>polars-llm</title>
+  <desc>polars-llm wordmark: chat-bubble icon with stacked DataFrame rows next to the project name.</desc>
+
+  <!-- ===== Icon (256x256 design, scaled to ~200x200) ===== -->
+  <g transform="translate(0 0) scale(0.78125)">
+    <!-- Chat bubble -->
+    <path d="
+        M 52 24
+        H 220
+        A 24 24 0 0 1 244 48
+        V 168
+        A 24 24 0 0 1 220 192
+        H 124
+        L 76 232
+        L 84 192
+        H 52
+        A 24 24 0 0 1 28 168
+        V 48
+        A 24 24 0 0 1 52 24
+        Z"
+      fill="#0E1525"/>
+
+    <!-- DataFrame rows -->
+    <rect x="56" y="64"  width="124" height="16" rx="5" fill="#F08F39"/>
+    <rect x="56" y="92"  width="160" height="16" rx="5" fill="#FFFFFF"/>
+    <rect x="56" y="120" width="100" height="16" rx="5" fill="#F08F39"/>
+    <rect x="56" y="148" width="140" height="16" rx="5" fill="#FFFFFF"/>
+
+    <!-- Sparkle accent -->
+    <path d="M 220 36
+             L 226 56
+             L 246 62
+             L 226 68
+             L 220 88
+             L 214 68
+             L 194 62
+             L 214 56
+             Z"
+          fill="#F08F39"/>
+  </g>
+
+  <!-- ===== Wordmark ===== -->
+  <g font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif"
+     font-weight="800"
+     font-size="104"
+     letter-spacing="-3">
+    <text x="220" y="124" fill="#0E1525">polars</text>
+    <text x="464" y="124" fill="#0E1525" opacity="0.45">·</text>
+    <text x="496" y="124" fill="#F08F39">llm</text>
+  </g>
+</svg>

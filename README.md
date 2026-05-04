@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo-wordmark.svg" alt="polars-llm" width="420">
+</p>
+
 # polars-llm
 
 [![PyPI version](https://img.shields.io/pypi/v/polars-llm.svg)](https://pypi.org/project/polars-llm/)

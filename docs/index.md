@@ -3,6 +3,10 @@ title: polars-llm — LLM and embedding calls from Polars DataFrames
 description: Call OpenAI, Anthropic, and Gemini chat and embedding models from a Polars DataFrame, one row at a time, using native Polars expressions. Powered by LangChain.
 ---
 
+<p align="center">
+  <img src="assets/logo-wordmark.svg" alt="polars-llm" width="420">
+</p>
+
 # polars-llm
 
 [![PyPI version](https://img.shields.io/pypi/v/polars-llm.svg)](https://pypi.org/project/polars-llm/)
