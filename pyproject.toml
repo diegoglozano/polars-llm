@@ -1,0 +1,158 @@
+[project]
+name = "polars-llm"
+version = "0.0.1"
+description = "Call LLMs and embedding models from a Polars DataFrame, one row at a time, using native Polars expressions. Powered by LangChain."
+authors = [{ name = "Diego Garcia Lozano", email = "diegoglozano96@gmail.com" }]
+readme = "README.md"
+keywords = [
+    "polars",
+    "polars-llm",
+    "polars-ai",
+    "langchain",
+    "llm",
+    "openai",
+    "anthropic",
+    "gemini",
+    "embeddings",
+    "dataframe",
+    "etl",
+    "python",
+]
+requires-python = ">=3.9,<4.0"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "polars>=1.0.0",
+    "langchain-core>=0.3.0",
+    "nest-asyncio>=1.6.0",
+]
+
+[project.optional-dependencies]
+openai = ["langchain-openai>=0.2.0"]
+anthropic = ["langchain-anthropic>=0.2.0"]
+gemini = ["langchain-google-genai>=2.0.0"]
+all = [
+    "langchain-openai>=0.2.0",
+    "langchain-anthropic>=0.2.0",
+    "langchain-google-genai>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://diegoglozano.github.io/polars-ai/"
+Repository = "https://github.com/diegoglozano/polars-ai"
+Documentation = "https://diegoglozano.github.io/polars-ai/"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.2.0",
+    "prek>=0.3.11",
+    "tox-uv>=1.11.3",
+    "deptry>=0.20.0",
+    "ty>=0.0.33",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.6.9",
+    "mkdocs>=1.4.2",
+    "mkdocs-material>=8.5.10",
+    "mkdocstrings[python]>=0.26.1",
+    "pydantic>=2.0",
+    "langchain-openai>=0.2.0",
+    "langchain-anthropic>=0.2.0",
+    "langchain-google-genai>=2.0.0",
+]
+
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = { find = { include = ["polars_llm*"] } }
+
+[tool.ty.src]
+include = ["polars_llm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = [
+    # flake8-2020
+    "YTT",
+    # flake8-bandit
+    "S",
+    # flake8-bugbear
+    "B",
+    # flake8-builtins
+    "A",
+    # flake8-comprehensions
+    "C4",
+    # flake8-debugger
+    "T10",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    # mccabe
+    "C90",
+    # pycodestyle
+    "E", "W",
+    # pyflakes
+    "F",
+    # pygrep-hooks
+    "PGH",
+    # pyupgrade
+    "UP",
+    # ruff
+    "RUF",
+    # tryceratops
+    "TRY",
+]
+ignore = [
+    # LineTooLong
+    "E501",
+    # DoNotAssignLambda
+    "E731",
+    # raise-vanilla-args (long exception messages — we want descriptive errors)
+    "TRY003",
+    # try-consider-else (clarity > strictness in retry loops)
+    "TRY300",
+    # complex-structure (chat_results_to_series fans out across orthogonal modes)
+    "C901",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.format]
+preview = true
+
+[tool.coverage.report]
+skip_empty = true
+
+[tool.coverage.run]
+branch = true
+source = ["polars_llm"]
+
+[tool.deptry]
+exclude = ["examples", "tests", ".venv", "build", "dist"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = [
+    "langchain-openai",
+    "langchain-anthropic",
+    "langchain-google-genai",
+]

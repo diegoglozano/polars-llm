@@ -1,0 +1,62 @@
+site_name: polars-llm
+repo_url: https://github.com/diegoglozano/polars-ai
+site_url: https://diegoglozano.github.io/polars-ai
+site_description: Call LLMs and embedding models from a Polars DataFrame, one row at a time, using native Polars expressions. Powered by LangChain.
+site_author: Diego Garcia Lozano
+edit_uri: edit/main/docs/
+repo_name: diegoglozano/polars-ai
+copyright: Maintained by <a href="https://diegoglozano.com">diegoglozano</a>.
+
+nav:
+  - Home: index.md
+  - API reference: documentation.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [polars_llm]
+          options:
+            docstring_style: numpy
+            show_root_heading: true
+            show_source: true
+            members_order: source
+            heading_level: 3
+theme:
+  name: material
+  feature:
+    tabs: true
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/diegoglozano/polars-ai
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/polars-llm
+  meta:
+    - name: keywords
+      content: polars, polars llm, polars ai, langchain, openai, anthropic, gemini, dataframe llm, embeddings dataframe
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
