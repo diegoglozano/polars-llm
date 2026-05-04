@@ -2,9 +2,9 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/polars-llm.svg)](https://pypi.org/project/polars-llm/)
 [![Python versions](https://img.shields.io/pypi/pyversions/polars-llm.svg)](https://pypi.org/project/polars-llm/)
-[![Build status](https://img.shields.io/github/actions/workflow/status/diegoglozano/polars-ai/main.yml?branch=main)](https://github.com/diegoglozano/polars-ai/actions/workflows/main.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/gh/diegoglozano/polars-ai/branch/main/graph/badge.svg)](https://codecov.io/gh/diegoglozano/polars-ai)
-[![License](https://img.shields.io/github/license/diegoglozano/polars-ai)](https://github.com/diegoglozano/polars-ai/blob/main/LICENSE)
+[![Build status](https://img.shields.io/github/actions/workflow/status/diegoglozano/polars-llm/main.yml?branch=main)](https://github.com/diegoglozano/polars-llm/actions/workflows/main.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/diegoglozano/polars-llm/branch/main/graph/badge.svg)](https://codecov.io/gh/diegoglozano/polars-llm)
+[![License](https://img.shields.io/github/license/diegoglozano/polars-llm)](https://github.com/diegoglozano/polars-llm/blob/main/LICENSE)
 
 **Call OpenAI, Anthropic, and Gemini models from a [Polars](https://pola.rs) DataFrame, one row at a time, using native Polars expressions.**
 
@@ -22,8 +22,8 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 )
 ```
 
-- **Repository**: <https://github.com/diegoglozano/polars-ai>
-- **Documentation**: <https://diegoglozano.github.io/polars-ai/>
+- **Repository**: <https://github.com/diegoglozano/polars-llm>
+- **Documentation**: <https://diegoglozano.github.io/polars-llm/>
 - **PyPI**: <https://pypi.org/project/polars-llm/>
 
 ---

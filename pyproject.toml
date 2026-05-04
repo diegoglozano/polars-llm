@@ -48,9 +48,9 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://diegoglozano.github.io/polars-ai/"
-Repository = "https://github.com/diegoglozano/polars-ai"
-Documentation = "https://diegoglozano.github.io/polars-ai/"
+Homepage = "https://diegoglozano.github.io/polars-llm/"
+Repository = "https://github.com/diegoglozano/polars-llm"
+Documentation = "https://diegoglozano.github.io/polars-llm/"
 
 [dependency-groups]
 dev = [
