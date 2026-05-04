@@ -1,19 +1,27 @@
 """Tests for the polars_llm `.llm` namespace.
 
-Provider classes are monkey-patched with hand-rolled duck-typed fakes so we
-never need real API keys or LangChain provider SDKs at test time.
+The provider classes (`ChatOpenAI`, `ChatAnthropic`, …, `OpenAIEmbeddings`,
+`GoogleGenerativeAIEmbeddings`) are monkey-patched with LangChain-native test
+fakes — subclasses of `BaseChatModel` / `Embeddings` — so we exercise the full
+LangChain Runnable contract (`invoke`, `ainvoke`, `batch`, `with_structured_output`,
+…) without needing API keys at test time.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import warnings
 from typing import Any, Callable
 
 import polars as pl
 import pytest
-from langchain_core.messages import AIMessage
-from pydantic import BaseModel
+from langchain_core.embeddings import Embeddings
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.outputs import ChatGeneration, ChatResult
+from pydantic import BaseModel, PrivateAttr
 
 import polars_llm  # noqa: F401  registers the `.llm` namespace
 from polars_llm import llm as _llm_module
@@ -22,78 +30,93 @@ from polars_llm import llm as _llm_module
 # --------------------------------------------------------------------------
 # Fakes
 # --------------------------------------------------------------------------
-class FakeChat:
-    """Duck-typed stand-in for a LangChain chat model.
+class CallbackChat(BaseChatModel):
+    """A `BaseChatModel` test fake that delegates each call to a Python callback.
 
-    `responder` maps a list of messages to a string response (or
-    AIMessage / BaseException). `fail_first` simulates transient failures.
+    Built on `BaseChatModel`, so the full Runnable contract is exercised:
+    `invoke`, `ainvoke`, `batch`, `abatch`, `with_structured_output`, and
+    callback machinery. `responder(messages) -> str | AIMessage | BaseException`
+    drives the response per call. `fail_first=N` raises on the first N calls
+    (for retry tests). `delay` makes async calls await before responding (for
+    concurrency-cap tests).
     """
+
+    _responder: Callable[[list[BaseMessage]], Any] = PrivateAttr()
+    _fail_first: int = PrivateAttr(default=0)
+    _delay: float = PrivateAttr(default=0.0)
+    _calls: list[list[BaseMessage]] = PrivateAttr(default_factory=list)
+    _in_flight: int = PrivateAttr(default=0)
+    _in_flight_max: int = PrivateAttr(default=0)
 
     def __init__(
         self,
-        responder: Callable[[list[Any]], Any] | None = None,
+        responder: Callable[[list[BaseMessage]], Any] | None = None,
         *,
         fail_first: int = 0,
         delay: float = 0.0,
+        **kwargs: Any,
     ) -> None:
+        super().__init__(**kwargs)
         self._responder = responder or (lambda msgs: "ok")
         self._fail_first = fail_first
-        self.calls: list[list[Any]] = []
-        self._lock_count = 0
         self._delay = delay
-        self.in_flight_max = 0
-        self._in_flight = 0
 
-    def _make_response(self, messages: list[Any]) -> Any:
-        self.calls.append(messages)
-        if len(self.calls) <= self._fail_first:
-            raise RuntimeError(f"simulated failure #{len(self.calls)}")
+    @property
+    def calls(self) -> list[list[BaseMessage]]:
+        return self._calls
+
+    @property
+    def in_flight_max(self) -> int:
+        return self._in_flight_max
+
+    @property
+    def _llm_type(self) -> str:
+        return "callback-fake"
+
+    def _make_message(self, messages: list[BaseMessage]) -> AIMessage:
+        self._calls.append(messages)
+        if len(self._calls) <= self._fail_first:
+            raise RuntimeError(f"simulated failure #{len(self._calls)}")
         result = self._responder(messages)
         if isinstance(result, BaseException):
             raise result
-        if isinstance(result, str):
-            return AIMessage(content=result)
-        return result
+        return AIMessage(content=result if isinstance(result, str) else str(result))
 
-    def invoke(self, messages: list[Any]) -> Any:
-        return self._make_response(messages)
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        return ChatResult(generations=[ChatGeneration(message=self._make_message(messages))])
 
-    async def ainvoke(self, messages: list[Any]) -> Any:
-        import asyncio
-
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
         self._in_flight += 1
-        self.in_flight_max = max(self.in_flight_max, self._in_flight)
+        self._in_flight_max = max(self._in_flight_max, self._in_flight)
         try:
             if self._delay:
                 await asyncio.sleep(self._delay)
-            return self._make_response(messages)
+            return self._generate(messages, stop, run_manager, **kwargs)
         finally:
             self._in_flight -= 1
 
-    def with_structured_output(self, schema: Any) -> FakeStructured:
-        return FakeStructured(self, schema)
+    def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
+        # Pipe the AIMessage's content through PydanticOutputParser so the
+        # downstream code receives a real Pydantic instance — same shape as
+        # production providers' `with_structured_output`.
+        return self | PydanticOutputParser(pydantic_object=schema)
 
 
-class FakeStructured:
-    def __init__(self, parent: FakeChat, schema: Any) -> None:
-        self._parent = parent
-        self._schema = schema
+class CallbackEmbeddings(Embeddings):
+    """An `Embeddings` test fake driven by a Python callback."""
 
-    def _parse(self, message: Any) -> Any:
-        content = message.content if hasattr(message, "content") else message
-        data = json.loads(content)
-        if hasattr(self._schema, "model_validate"):
-            return self._schema.model_validate(data)
-        return data
-
-    def invoke(self, messages: list[Any]) -> Any:
-        return self._parse(self._parent.invoke(messages))
-
-    async def ainvoke(self, messages: list[Any]) -> Any:
-        return self._parse(await self._parent.ainvoke(messages))
-
-
-class FakeEmbed:
     def __init__(
         self,
         fn: Callable[[str], list[float]] | None = None,
@@ -110,8 +133,14 @@ class FakeEmbed:
             raise RuntimeError("simulated embed failure")
         return self._fn(text)
 
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_query(t) for t in texts]
+
     async def aembed_query(self, text: str) -> list[float]:
         return self.embed_query(text)
+
+    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [await self.aembed_query(t) for t in texts]
 
 
 def _patch_chat(monkeypatch: pytest.MonkeyPatch, attr: str, fake: Any) -> None:
@@ -126,7 +155,7 @@ def _patch_embed(monkeypatch: pytest.MonkeyPatch, attr: str, fake: Any) -> None:
 # Chat: basic verbs
 # --------------------------------------------------------------------------
 def test_openai_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: f"echo:{msgs[-1].content}")
+    fake = CallbackChat(lambda msgs: f"echo:{msgs[-1].content}")
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["hello", "world"]})
@@ -136,7 +165,7 @@ def test_openai_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_anthropic_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: f"a:{msgs[-1].content}")
+    fake = CallbackChat(lambda msgs: f"a:{msgs[-1].content}")
     _patch_chat(monkeypatch, "ChatAnthropic", fake)
 
     df = pl.DataFrame({"prompt": ["x", "y"]})
@@ -146,7 +175,7 @@ def test_anthropic_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_gemini_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: f"g:{msgs[-1].content}")
+    fake = CallbackChat(lambda msgs: f"g:{msgs[-1].content}")
     _patch_chat(monkeypatch, "ChatGoogleGenerativeAI", fake)
 
     df = pl.DataFrame({"prompt": ["q"]})
@@ -159,7 +188,7 @@ def test_gemini_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
 # Chat: async verbs
 # --------------------------------------------------------------------------
 def test_aopenai_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: msgs[-1].content.upper())
+    fake = CallbackChat(lambda msgs: msgs[-1].content.upper())
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["a", "b", "c"]})
@@ -174,7 +203,7 @@ def test_aanthropic_aopenai_agemini_run(monkeypatch: pytest.MonkeyPatch) -> None
         ("ChatAnthropic", "aanthropic", "claude-sonnet-4-6"),
         ("ChatGoogleGenerativeAI", "agemini", "gemini-2.5-pro"),
     ]:
-        fake = FakeChat(lambda msgs: "ok")
+        fake = CallbackChat(lambda msgs: "ok")
         _patch_chat(monkeypatch, attr, fake)
         df = pl.DataFrame({"prompt": ["x"]})
         method = getattr(pl.col("prompt").llm, verb)
@@ -192,7 +221,7 @@ def test_system_prompt_literal(monkeypatch: pytest.MonkeyPatch) -> None:
         seen.append([type(m).__name__ for m in msgs])
         return "ok"
 
-    fake = FakeChat(responder)
+    fake = CallbackChat(responder)
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["hi"]})
@@ -212,7 +241,7 @@ def test_system_prompt_per_row(monkeypatch: pytest.MonkeyPatch) -> None:
             seen_systems.append(msgs[0].content)
         return "ok"
 
-    fake = FakeChat(responder)
+    fake = CallbackChat(responder)
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["a", "b"], "sys": ["s1", "s2"]})
@@ -230,7 +259,7 @@ def test_no_system_message_when_none(monkeypatch: pytest.MonkeyPatch) -> None:
         seen_types.append([type(m).__name__ for m in msgs])
         return "ok"
 
-    fake = FakeChat(responder)
+    fake = CallbackChat(responder)
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["hi"]})
@@ -243,7 +272,7 @@ def test_no_system_message_when_none(monkeypatch: pytest.MonkeyPatch) -> None:
 # Metadata, errors, retries
 # --------------------------------------------------------------------------
 def test_with_metadata_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: "hello")
+    fake = CallbackChat(lambda msgs: "hello")
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
@@ -256,7 +285,7 @@ def test_with_metadata_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_with_metadata_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: ValueError("bad"))
+    fake = CallbackChat(lambda msgs: ValueError("bad"))
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
@@ -268,7 +297,7 @@ def test_with_metadata_failure(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_retries_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: "ok", fail_first=2)
+    fake = CallbackChat(lambda msgs: "ok", fail_first=2)
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
@@ -279,7 +308,7 @@ def test_retries_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_retries_exhausted_returns_null(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: RuntimeError("boom"))
+    fake = CallbackChat(lambda msgs: RuntimeError("boom"))
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
@@ -290,7 +319,7 @@ def test_retries_exhausted_returns_null(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_on_error_raise(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: RuntimeError("boom"))
+    fake = CallbackChat(lambda msgs: RuntimeError("boom"))
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
@@ -299,7 +328,7 @@ def test_on_error_raise(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_no_warning_with_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: RuntimeError("boom"))
+    fake = CallbackChat(lambda msgs: RuntimeError("boom"))
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
@@ -312,7 +341,7 @@ def test_no_warning_with_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
 # Cache, concurrency
 # --------------------------------------------------------------------------
 def test_cache_dedupes_sync(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: msgs[-1].content)
+    fake = CallbackChat(lambda msgs: msgs[-1].content)
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["a", "a", "b", "a"]})
@@ -323,7 +352,7 @@ def test_cache_dedupes_sync(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_cache_dedupes_async(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: msgs[-1].content)
+    fake = CallbackChat(lambda msgs: msgs[-1].content)
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["a", "b", "a", "b"]})
@@ -334,7 +363,7 @@ def test_cache_dedupes_async(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_max_concurrency_caps(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: "ok", delay=0.01)
+    fake = CallbackChat(lambda msgs: "ok", delay=0.01)
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": [f"p{i}" for i in range(10)]})
@@ -353,7 +382,7 @@ class _Person(BaseModel):
 
 
 def test_structured_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: json.dumps({"name": "Diego", "age": 30}))
+    fake = CallbackChat(lambda msgs: json.dumps({"name": "Diego", "age": 30}))
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["who?"]})
@@ -364,7 +393,7 @@ def test_structured_output(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_structured_output_async(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeChat(lambda msgs: json.dumps({"name": "Ana", "age": 25}))
+    fake = CallbackChat(lambda msgs: json.dumps({"name": "Ana", "age": 25}))
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["who?"]})
@@ -378,7 +407,7 @@ def test_structured_output_async(monkeypatch: pytest.MonkeyPatch) -> None:
 # Custom client passthrough
 # --------------------------------------------------------------------------
 def test_custom_client_is_used() -> None:
-    fake = FakeChat(lambda msgs: "from-client")
+    fake = CallbackChat(lambda msgs: "from-client")
 
     df = pl.DataFrame({"prompt": ["x", "y"]})
     out = df.with_columns(pl.col("prompt").llm.openai(client=fake).alias("r"))
@@ -396,7 +425,7 @@ def test_model_required_when_no_client() -> None:
 # Embeddings
 # --------------------------------------------------------------------------
 def test_openai_embed(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeEmbed(lambda t: [float(len(t)), 1.0, 2.0])
+    fake = CallbackEmbeddings(lambda t: [float(len(t)), 1.0, 2.0])
     _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["hi", "hello"]})
@@ -407,7 +436,7 @@ def test_openai_embed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_aopenai_embed(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeEmbed(lambda t: [1.0, 2.0])
+    fake = CallbackEmbeddings(lambda t: [1.0, 2.0])
     _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["a", "b"]})
@@ -417,7 +446,7 @@ def test_aopenai_embed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_gemini_embed(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeEmbed(lambda t: [0.5])
+    fake = CallbackEmbeddings(lambda t: [0.5])
     _patch_embed(monkeypatch, "GoogleGenerativeAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
@@ -427,7 +456,7 @@ def test_gemini_embed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_embed_with_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeEmbed(lambda t: [0.1, 0.2, 0.3])
+    fake = CallbackEmbeddings(lambda t: [0.1, 0.2, 0.3])
     _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
@@ -440,7 +469,7 @@ def test_embed_with_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_embed_failure_returns_null_warns(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeEmbed(lambda t: [0.0], fail_first=10)
+    fake = CallbackEmbeddings(lambda t: [0.0], fail_first=10)
     _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
@@ -451,7 +480,7 @@ def test_embed_failure_returns_null_warns(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_embed_cache_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeEmbed(lambda t: [float(len(t))])
+    fake = CallbackEmbeddings(lambda t: [float(len(t))])
     _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["a", "a", "bb", "a"]})

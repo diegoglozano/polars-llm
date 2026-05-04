@@ -78,6 +78,7 @@ A running list of features to consider for `polars-llm`. Ordered roughly by valu
 ### Tests / benchmarks
 
 - A `benchmarks/` script (mirroring `polars-api/benchmarks/bench.py`) that spins up a fake LangChain server locally and times sync vs. async vs. native batched throughput, reporting rps / cost.
+- **Integration smoke tests** gated on env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`). One per provider, skipped when the key isn't set, run on an opt-in `tox` env (e.g. `tox -e integration`). Catches LangChain SDK signature drift that the unit suite — which monkey-patches the provider classes — can't see.
 
 ### Docs
 
