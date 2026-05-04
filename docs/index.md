@@ -7,8 +7,8 @@ description: Call OpenAI, Anthropic, and Gemini chat and embedding models from a
 
 [![PyPI version](https://img.shields.io/pypi/v/polars-llm.svg)](https://pypi.org/project/polars-llm/)
 [![Python versions](https://img.shields.io/pypi/pyversions/polars-llm.svg)](https://pypi.org/project/polars-llm/)
-[![Build status](https://img.shields.io/github/actions/workflow/status/diegoglozano/polars-ai/main.yml?branch=main)](https://github.com/diegoglozano/polars-ai/actions/workflows/main.yml?query=branch%3Amain)
-[![License](https://img.shields.io/github/license/diegoglozano/polars-ai)](https://github.com/diegoglozano/polars-ai/blob/main/LICENSE)
+[![Build status](https://img.shields.io/github/actions/workflow/status/diegoglozano/polars-llm/main.yml?branch=main)](https://github.com/diegoglozano/polars-llm/actions/workflows/main.yml?query=branch%3Amain)
+[![License](https://img.shields.io/github/license/diegoglozano/polars-llm)](https://github.com/diegoglozano/polars-llm/blob/main/LICENSE)
 
 **Call OpenAI, Anthropic, and Gemini models from a [Polars](https://pola.rs) DataFrame, one row at a time, using native Polars expressions.**
 
@@ -85,6 +85,6 @@ See the full [API reference](documentation.md).
 
 ## Links
 
-- **GitHub**: <https://github.com/diegoglozano/polars-ai>
+- **GitHub**: <https://github.com/diegoglozano/polars-llm>
 - **PyPI**: <https://pypi.org/project/polars-llm/>
-- **Issues**: <https://github.com/diegoglozano/polars-ai/issues>
+- **Issues**: <https://github.com/diegoglozano/polars-llm/issues>

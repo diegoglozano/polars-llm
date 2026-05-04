@@ -1,10 +1,10 @@
 site_name: polars-llm
-repo_url: https://github.com/diegoglozano/polars-ai
-site_url: https://diegoglozano.github.io/polars-ai
+repo_url: https://github.com/diegoglozano/polars-llm
+site_url: https://diegoglozano.github.io/polars-llm
 site_description: Call LLMs and embedding models from a Polars DataFrame, one row at a time, using native Polars expressions. Powered by LangChain.
 site_author: Diego Garcia Lozano
 edit_uri: edit/main/docs/
-repo_name: diegoglozano/polars-ai
+repo_name: diegoglozano/polars-llm
 copyright: Maintained by <a href="https://diegoglozano.com">diegoglozano</a>.
 
 nav:
@@ -48,7 +48,7 @@ theme:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/diegoglozano/polars-ai
+      link: https://github.com/diegoglozano/polars-llm
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/polars-llm
   meta:
