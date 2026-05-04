@@ -1,7 +1,7 @@
-"""The ``.ai`` Polars expression namespace.
+"""The ``.llm`` Polars expression namespace.
 
 Importing :mod:`polars_llm` registers the namespace, after which any Polars
-expression that resolves to a string column gains an ``.ai`` accessor with one
+expression that resolves to a string column gains a ``.llm`` accessor with one
 verb per provider (``openai``, ``anthropic``, ``gemini``) plus async variants
 (``aopenai``, ``aanthropic``, ``agemini``) and embedding variants
 (``openai_embed`` / ``gemini_embed`` and their async counterparts).
@@ -70,7 +70,7 @@ def _make_chat(
     if client is not None:
         return client
     if model is None:
-        raise ValueError(f"polars-llm: `model=` is required for `.ai.{provider}` when no `client` is provided.")
+        raise ValueError(f"polars-llm: `model=` is required for `.llm.{provider}` when no `client` is provided.")
     if provider == "openai":
         cls = _require("openai", ChatOpenAI, "openai")
     elif provider == "anthropic":
@@ -92,7 +92,7 @@ def _make_embed(
         return client
     if model is None:
         raise ValueError(
-            f"polars-llm: `model=` is required for `.ai.{provider}_embed` when no `client` is provided.",
+            f"polars-llm: `model=` is required for `.llm.{provider}_embed` when no `client` is provided.",
         )
     if provider == "openai":
         cls = _require("openai", OpenAIEmbeddings, "openai")
@@ -103,8 +103,8 @@ def _make_embed(
     return cls(model=model, **model_kwargs)
 
 
-@pl.api.register_expr_namespace("ai")
-class Ai:
+@pl.api.register_expr_namespace("llm")
+class Llm:
     """Expression namespace for calling LLMs and embedding models per row."""
 
     def __init__(self, prompt: pl.Expr) -> None:

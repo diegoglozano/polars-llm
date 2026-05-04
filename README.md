@@ -8,16 +8,16 @@
 
 **Call OpenAI, Anthropic, and Gemini models from a [Polars](https://pola.rs) DataFrame, one row at a time, using native Polars expressions.**
 
-`polars-llm` registers an `.ai` namespace on Polars expressions so you can call any [LangChain](https://python.langchain.com/)-supported chat model or embedding model on every row of a DataFrame — synchronously or asynchronously — and pipe the responses straight back into your data pipeline.
+`polars-llm` registers an `.llm` namespace on Polars expressions so you can call any [LangChain](https://python.langchain.com/)-supported chat model or embedding model on every row of a DataFrame — synchronously or asynchronously — and pipe the responses straight back into your data pipeline.
 
 ```python
 import polars as pl
-import polars_llm  # noqa: F401  — registers the `.ai` namespace
+import polars_llm  # noqa: F401  — registers the `.llm` namespace
 
 (
     pl.DataFrame({"user_prompt": ["Summarise polars in one sentence."]})
       .with_columns(
-          pl.col("user_prompt").ai.openai(model="gpt-4o-mini").alias("answer")
+          pl.col("user_prompt").llm.openai(model="gpt-4o-mini").alias("answer")
       )
 )
 ```
@@ -79,7 +79,7 @@ df = (
         "What is the capital of France?",
     ]})
     .with_columns(
-        pl.col("user_prompt").ai.openai(model="gpt-4o-mini").alias("answer")
+        pl.col("user_prompt").llm.openai(model="gpt-4o-mini").alias("answer")
     )
 )
 ```
@@ -88,13 +88,13 @@ df = (
 
 ```python
 # Same system prompt for every row
-pl.col("user_prompt").ai.anthropic(
+pl.col("user_prompt").llm.anthropic(
     model="claude-sonnet-4-6",
     system="Answer in fewer than 10 words.",
 )
 
 # Per-row system prompt from another column
-pl.col("user_prompt").ai.gemini(
+pl.col("user_prompt").llm.gemini(
     model="gemini-2.5-pro",
     system=pl.col("system_prompt"),
 )
@@ -106,7 +106,7 @@ The `a`-prefixed verbs run concurrently across the batch, capped at `max_concurr
 
 ```python
 df.with_columns(
-    pl.col("user_prompt").ai.aopenai(
+    pl.col("user_prompt").llm.aopenai(
         model="gpt-4o-mini",
         max_concurrency=20,
     ).alias("answer")
@@ -123,7 +123,7 @@ class Sentiment(BaseModel):
     confidence: float
 
 df.with_columns(
-    pl.col("review").ai.openai(
+    pl.col("review").llm.openai(
         model="gpt-4o-mini",
         schema=Sentiment,
     ).alias("sentiment")
@@ -134,7 +134,7 @@ df.with_columns(
 
 ```python
 df.with_columns(
-    pl.col("text").ai.openai_embed(
+    pl.col("text").llm.openai_embed(
         model="text-embedding-3-small",
     ).alias("vector")
 )
@@ -143,7 +143,7 @@ df.with_columns(
 ### 6. Retries, caching, metadata
 
 ```python
-pl.col("user_prompt").ai.aanthropic(
+pl.col("user_prompt").llm.aanthropic(
     model="claude-sonnet-4-6",
     retries=3,
     backoff=0.5,
@@ -155,7 +155,7 @@ pl.col("user_prompt").ai.aanthropic(
 
 ## API reference
 
-All methods live under the `.ai` namespace on any Polars expression that resolves to a string column.
+All methods live under the `.llm` namespace on any Polars expression that resolves to a string column.
 
 ### Chat verbs
 

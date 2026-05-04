@@ -1,4 +1,4 @@
-"""Tests for the polars_llm `.ai` namespace.
+"""Tests for the polars_llm `.llm` namespace.
 
 Provider classes are monkey-patched with hand-rolled duck-typed fakes so we
 never need real API keys or LangChain provider SDKs at test time.
@@ -15,8 +15,8 @@ import pytest
 from langchain_core.messages import AIMessage
 from pydantic import BaseModel
 
-import polars_llm  # noqa: F401  registers the `.ai` namespace
-from polars_llm import ai as _ai_module
+import polars_llm  # noqa: F401  registers the `.llm` namespace
+from polars_llm import llm as _llm_module
 
 
 # --------------------------------------------------------------------------
@@ -115,11 +115,11 @@ class FakeEmbed:
 
 
 def _patch_chat(monkeypatch: pytest.MonkeyPatch, attr: str, fake: Any) -> None:
-    monkeypatch.setattr(f"polars_llm.ai.{attr}", lambda **_: fake)
+    monkeypatch.setattr(f"polars_llm.llm.{attr}", lambda **_: fake)
 
 
 def _patch_embed(monkeypatch: pytest.MonkeyPatch, attr: str, fake: Any) -> None:
-    monkeypatch.setattr(f"polars_llm.ai.{attr}", lambda **_: fake)
+    monkeypatch.setattr(f"polars_llm.llm.{attr}", lambda **_: fake)
 
 
 # --------------------------------------------------------------------------
@@ -130,7 +130,7 @@ def test_openai_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["hello", "world"]})
-    out = df.with_columns(pl.col("prompt").ai.openai(model="gpt-4o-mini").alias("res"))
+    out = df.with_columns(pl.col("prompt").llm.openai(model="gpt-4o-mini").alias("res"))
 
     assert out["res"].to_list() == ["echo:hello", "echo:world"]
 
@@ -140,7 +140,7 @@ def test_anthropic_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatAnthropic", fake)
 
     df = pl.DataFrame({"prompt": ["x", "y"]})
-    out = df.with_columns(pl.col("prompt").ai.anthropic(model="claude-sonnet-4-6").alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.anthropic(model="claude-sonnet-4-6").alias("r"))
 
     assert out["r"].to_list() == ["a:x", "a:y"]
 
@@ -150,7 +150,7 @@ def test_gemini_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatGoogleGenerativeAI", fake)
 
     df = pl.DataFrame({"prompt": ["q"]})
-    out = df.with_columns(pl.col("prompt").ai.gemini(model="gemini-2.5-pro").alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.gemini(model="gemini-2.5-pro").alias("r"))
 
     assert out["r"].to_list() == ["g:q"]
 
@@ -163,7 +163,7 @@ def test_aopenai_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["a", "b", "c"]})
-    out = df.with_columns(pl.col("prompt").ai.aopenai(model="gpt-4o-mini").alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.aopenai(model="gpt-4o-mini").alias("r"))
 
     assert out["r"].to_list() == ["A", "B", "C"]
 
@@ -177,7 +177,7 @@ def test_aanthropic_aopenai_agemini_run(monkeypatch: pytest.MonkeyPatch) -> None
         fake = FakeChat(lambda msgs: "ok")
         _patch_chat(monkeypatch, attr, fake)
         df = pl.DataFrame({"prompt": ["x"]})
-        method = getattr(pl.col("prompt").ai, verb)
+        method = getattr(pl.col("prompt").llm, verb)
         out = df.with_columns(method(model=model).alias("r"))
         assert out["r"].to_list() == ["ok"]
 
@@ -196,7 +196,7 @@ def test_system_prompt_literal(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["hi"]})
-    df.with_columns(pl.col("prompt").ai.openai(model="x", system="be terse").alias("r")).collect_schema()
+    df.with_columns(pl.col("prompt").llm.openai(model="x", system="be terse").alias("r")).collect_schema()
 
     assert seen == [["SystemMessage", "HumanMessage"]]
     assert fake.calls[0][0].content == "be terse"
@@ -217,7 +217,7 @@ def test_system_prompt_per_row(monkeypatch: pytest.MonkeyPatch) -> None:
 
     df = pl.DataFrame({"prompt": ["a", "b"], "sys": ["s1", "s2"]})
     df.with_columns(
-        pl.col("prompt").ai.openai(model="x", system=pl.col("sys")).alias("r"),
+        pl.col("prompt").llm.openai(model="x", system=pl.col("sys")).alias("r"),
     ).collect_schema()
 
     assert sorted(seen_systems) == ["s1", "s2"]
@@ -234,7 +234,7 @@ def test_no_system_message_when_none(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["hi"]})
-    df.with_columns(pl.col("prompt").ai.openai(model="x").alias("r")).collect_schema()
+    df.with_columns(pl.col("prompt").llm.openai(model="x").alias("r")).collect_schema()
 
     assert seen_types == [["HumanMessage"]]
 
@@ -247,7 +247,7 @@ def test_with_metadata_success(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
-    out = df.with_columns(pl.col("prompt").ai.openai(model="m", with_metadata=True).alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.openai(model="m", with_metadata=True).alias("r"))
 
     row = out["r"].to_list()[0]
     assert row["content"] == "hello"
@@ -260,7 +260,7 @@ def test_with_metadata_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
-    out = df.with_columns(pl.col("prompt").ai.openai(model="m", with_metadata=True).alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.openai(model="m", with_metadata=True).alias("r"))
 
     row = out["r"].to_list()[0]
     assert row["content"] is None
@@ -272,7 +272,7 @@ def test_retries_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
-    out = df.with_columns(pl.col("prompt").ai.openai(model="m", retries=3, backoff=0.0).alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.openai(model="m", retries=3, backoff=0.0).alias("r"))
 
     assert out["r"].to_list() == ["ok"]
     assert len(fake.calls) == 3
@@ -284,7 +284,7 @@ def test_retries_exhausted_returns_null(monkeypatch: pytest.MonkeyPatch) -> None
 
     df = pl.DataFrame({"prompt": ["x"]})
     with pytest.warns(UserWarning, match=r"1/1 request\(s\) failed"):
-        out = df.with_columns(pl.col("prompt").ai.openai(model="m", retries=2, backoff=0.0).alias("r"))
+        out = df.with_columns(pl.col("prompt").llm.openai(model="m", retries=2, backoff=0.0).alias("r"))
 
     assert out["r"].to_list() == [None]
 
@@ -295,7 +295,7 @@ def test_on_error_raise(monkeypatch: pytest.MonkeyPatch) -> None:
 
     df = pl.DataFrame({"prompt": ["x"]})
     with pytest.raises(Exception, match="boom"):
-        df.with_columns(pl.col("prompt").ai.openai(model="m", on_error="raise").alias("r"))
+        df.with_columns(pl.col("prompt").llm.openai(model="m", on_error="raise").alias("r"))
 
 
 def test_no_warning_with_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -305,7 +305,7 @@ def test_no_warning_with_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     df = pl.DataFrame({"prompt": ["x"]})
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        df.with_columns(pl.col("prompt").ai.openai(model="m", with_metadata=True).alias("r"))
+        df.with_columns(pl.col("prompt").llm.openai(model="m", with_metadata=True).alias("r"))
 
 
 # --------------------------------------------------------------------------
@@ -316,7 +316,7 @@ def test_cache_dedupes_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["a", "a", "b", "a"]})
-    out = df.with_columns(pl.col("prompt").ai.openai(model="m", cache=True).alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.openai(model="m", cache=True).alias("r"))
 
     assert out["r"].to_list() == ["a", "a", "b", "a"]
     assert len(fake.calls) == 2
@@ -327,7 +327,7 @@ def test_cache_dedupes_async(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["a", "b", "a", "b"]})
-    out = df.with_columns(pl.col("prompt").ai.aopenai(model="m", cache=True).alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.aopenai(model="m", cache=True).alias("r"))
 
     assert out["r"].to_list() == ["a", "b", "a", "b"]
     assert len(fake.calls) == 2
@@ -338,7 +338,7 @@ def test_max_concurrency_caps(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": [f"p{i}" for i in range(10)]})
-    out = df.with_columns(pl.col("prompt").ai.aopenai(model="m", max_concurrency=2).alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.aopenai(model="m", max_concurrency=2).alias("r"))
 
     assert out["r"].to_list() == ["ok"] * 10
     assert fake.in_flight_max <= 2
@@ -357,7 +357,7 @@ def test_structured_output(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["who?"]})
-    out = df.with_columns(pl.col("prompt").ai.openai(model="m", schema=_Person).alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.openai(model="m", schema=_Person).alias("r"))
 
     row = out["r"].to_list()[0]
     assert row == {"name": "Diego", "age": 30}
@@ -368,7 +368,7 @@ def test_structured_output_async(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_chat(monkeypatch, "ChatOpenAI", fake)
 
     df = pl.DataFrame({"prompt": ["who?"]})
-    out = df.with_columns(pl.col("prompt").ai.aopenai(model="m", schema=_Person).alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.aopenai(model="m", schema=_Person).alias("r"))
 
     row = out["r"].to_list()[0]
     assert row == {"name": "Ana", "age": 25}
@@ -381,7 +381,7 @@ def test_custom_client_is_used() -> None:
     fake = FakeChat(lambda msgs: "from-client")
 
     df = pl.DataFrame({"prompt": ["x", "y"]})
-    out = df.with_columns(pl.col("prompt").ai.openai(client=fake).alias("r"))
+    out = df.with_columns(pl.col("prompt").llm.openai(client=fake).alias("r"))
 
     assert out["r"].to_list() == ["from-client", "from-client"]
     assert len(fake.calls) == 2
@@ -389,7 +389,7 @@ def test_custom_client_is_used() -> None:
 
 def test_model_required_when_no_client() -> None:
     with pytest.raises(ValueError, match="model"):
-        pl.DataFrame({"prompt": ["x"]}).with_columns(pl.col("prompt").ai.openai().alias("r"))
+        pl.DataFrame({"prompt": ["x"]}).with_columns(pl.col("prompt").llm.openai().alias("r"))
 
 
 # --------------------------------------------------------------------------
@@ -400,7 +400,7 @@ def test_openai_embed(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["hi", "hello"]})
-    out = df.with_columns(pl.col("prompt").ai.openai_embed(model="text-embedding-3-small").alias("v"))
+    out = df.with_columns(pl.col("prompt").llm.openai_embed(model="text-embedding-3-small").alias("v"))
 
     vectors = out["v"].to_list()
     assert vectors == [[2.0, 1.0, 2.0], [5.0, 1.0, 2.0]]
@@ -411,7 +411,7 @@ def test_aopenai_embed(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["a", "b"]})
-    out = df.with_columns(pl.col("prompt").ai.aopenai_embed(model="m").alias("v"))
+    out = df.with_columns(pl.col("prompt").llm.aopenai_embed(model="m").alias("v"))
 
     assert out["v"].to_list() == [[1.0, 2.0], [1.0, 2.0]]
 
@@ -421,7 +421,7 @@ def test_gemini_embed(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_embed(monkeypatch, "GoogleGenerativeAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
-    out = df.with_columns(pl.col("prompt").ai.gemini_embed(model="m").alias("v"))
+    out = df.with_columns(pl.col("prompt").llm.gemini_embed(model="m").alias("v"))
 
     assert out["v"].to_list() == [[0.5]]
 
@@ -431,7 +431,7 @@ def test_embed_with_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["x"]})
-    out = df.with_columns(pl.col("prompt").ai.openai_embed(model="m", with_metadata=True).alias("v"))
+    out = df.with_columns(pl.col("prompt").llm.openai_embed(model="m", with_metadata=True).alias("v"))
 
     row = out["v"].to_list()[0]
     assert row["vector"] == [0.1, 0.2, 0.3]
@@ -445,7 +445,7 @@ def test_embed_failure_returns_null_warns(monkeypatch: pytest.MonkeyPatch) -> No
 
     df = pl.DataFrame({"prompt": ["x"]})
     with pytest.warns(UserWarning, match=r"1/1 request\(s\) failed"):
-        out = df.with_columns(pl.col("prompt").ai.openai_embed(model="m").alias("v"))
+        out = df.with_columns(pl.col("prompt").llm.openai_embed(model="m").alias("v"))
 
     assert out["v"].to_list() == [None]
 
@@ -455,7 +455,7 @@ def test_embed_cache_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
 
     df = pl.DataFrame({"prompt": ["a", "a", "bb", "a"]})
-    out = df.with_columns(pl.col("prompt").ai.openai_embed(model="m", cache=True).alias("v"))
+    out = df.with_columns(pl.col("prompt").llm.openai_embed(model="m", cache=True).alias("v"))
 
     assert out["v"].to_list() == [[1.0], [1.0], [2.0], [1.0]]
     assert len(fake.calls) == 2
@@ -465,8 +465,8 @@ def test_embed_cache_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:
 # Optional-extra import errors
 # --------------------------------------------------------------------------
 def test_missing_provider_raises_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_ai_module, "ChatOpenAI", None)
+    monkeypatch.setattr(_llm_module, "ChatOpenAI", None)
 
     df = pl.DataFrame({"prompt": ["x"]})
     with pytest.raises(ImportError, match=r"polars-llm\[openai\]"):
-        df.with_columns(pl.col("prompt").ai.openai(model="m").alias("r"))
+        df.with_columns(pl.col("prompt").llm.openai(model="m").alias("r"))

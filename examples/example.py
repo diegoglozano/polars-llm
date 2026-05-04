@@ -6,7 +6,7 @@ Set OPENAI_API_KEY (or ANTHROPIC_API_KEY / GOOGLE_API_KEY) before running.
 import polars as pl
 from pydantic import BaseModel
 
-import polars_llm  # noqa: F401  — registers the `.ai` namespace
+import polars_llm  # noqa: F401  — registers the `.llm` namespace
 
 
 class Sentiment(BaseModel):
@@ -25,14 +25,14 @@ df = pl.DataFrame({
 print(
     df.with_columns(
         # 1) plain chat completion
-        pl.col("user_prompt").ai.openai(model="gpt-4o-mini").alias("answer"),
+        pl.col("user_prompt").llm.openai(model="gpt-4o-mini").alias("answer"),
         # 2) structured output via Pydantic
         pl.col("user_prompt")
-        .ai.openai(model="gpt-4o-mini", schema=Sentiment, system="Score sentiment for the text.")
+        .llm.openai(model="gpt-4o-mini", schema=Sentiment, system="Score sentiment for the text.")
         .alias("sentiment"),
         # 3) async chat with concurrency cap
-        pl.col("user_prompt").ai.aanthropic(model="claude-sonnet-4-6", max_concurrency=4).alias("claude"),
+        pl.col("user_prompt").llm.aanthropic(model="claude-sonnet-4-6", max_concurrency=4).alias("claude"),
         # 4) embeddings
-        pl.col("user_prompt").ai.openai_embed(model="text-embedding-3-small").alias("vector"),
+        pl.col("user_prompt").llm.openai_embed(model="text-embedding-3-small").alias("vector"),
     ),
 )

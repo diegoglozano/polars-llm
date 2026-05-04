@@ -12,16 +12,16 @@ description: Call OpenAI, Anthropic, and Gemini chat and embedding models from a
 
 **Call OpenAI, Anthropic, and Gemini models from a [Polars](https://pola.rs) DataFrame, one row at a time, using native Polars expressions.**
 
-`polars-llm` registers an `.ai` namespace on Polars expressions so you can call any [LangChain](https://python.langchain.com/)-supported chat model or embedding model on every row of a DataFrame — synchronously or asynchronously — and pipe the responses straight back into your data pipeline.
+`polars-llm` registers an `.llm` namespace on Polars expressions so you can call any [LangChain](https://python.langchain.com/)-supported chat model or embedding model on every row of a DataFrame — synchronously or asynchronously — and pipe the responses straight back into your data pipeline.
 
 ```python
 import polars as pl
-import polars_llm  # noqa: F401  — registers the `.ai` namespace
+import polars_llm  # noqa: F401  — registers the `.llm` namespace
 
 (
     pl.DataFrame({"user_prompt": ["Summarise polars in one sentence."]})
       .with_columns(
-          pl.col("user_prompt").ai.openai(model="gpt-4o-mini").alias("answer")
+          pl.col("user_prompt").llm.openai(model="gpt-4o-mini").alias("answer")
       )
 )
 ```
@@ -54,7 +54,7 @@ Requires Python 3.9+ and Polars 1.0+. Auth follows LangChain conventions: set `O
 df = (
     pl.DataFrame({"user_prompt": ["Capital of Spain?", "Capital of France?"]})
       .with_columns(
-          pl.col("user_prompt").ai.openai(model="gpt-4o-mini").alias("answer")
+          pl.col("user_prompt").llm.openai(model="gpt-4o-mini").alias("answer")
       )
 )
 ```
@@ -69,7 +69,7 @@ class Sentiment(BaseModel):
     confidence: float
 
 df.with_columns(
-    pl.col("review").ai.openai(model="gpt-4o-mini", schema=Sentiment).alias("s")
+    pl.col("review").llm.openai(model="gpt-4o-mini", schema=Sentiment).alias("s")
 ).unnest("s")
 ```
 
@@ -77,7 +77,7 @@ df.with_columns(
 
 ```python
 df.with_columns(
-    pl.col("text").ai.openai_embed(model="text-embedding-3-small").alias("vector")
+    pl.col("text").llm.openai_embed(model="text-embedding-3-small").alias("vector")
 )
 ```
 

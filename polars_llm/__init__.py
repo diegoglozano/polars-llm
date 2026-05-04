@@ -1,3 +1,3 @@
-from .ai import Ai
+from .llm import Llm
 
-__all__ = ["Ai"]
+__all__ = ["Llm"]
