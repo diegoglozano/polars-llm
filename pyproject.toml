@@ -41,10 +41,13 @@ dependencies = [
 openai = ["langchain-openai>=0.2.0"]
 anthropic = ["langchain-anthropic>=0.2.0"]
 gemini = ["langchain-google-genai>=2.0.0"]
+ann = ["usearch>=2.12.0", "numpy>=1.23.0"]
 all = [
     "langchain-openai>=0.2.0",
     "langchain-anthropic>=0.2.0",
     "langchain-google-genai>=2.0.0",
+    "usearch>=2.12.0",
+    "numpy>=1.23.0",
 ]
 
 [project.urls]
@@ -68,6 +71,8 @@ dev = [
     "langchain-openai>=0.2.0",
     "langchain-anthropic>=0.2.0",
     "langchain-google-genai>=2.0.0",
+    "usearch>=2.12.0",
+    "numpy>=1.23.0",
 ]
 
 [build-system]
@@ -155,4 +160,6 @@ DEP002 = [
     "langchain-openai",
     "langchain-anthropic",
     "langchain-google-genai",
+    "usearch",
+    "numpy",
 ]
