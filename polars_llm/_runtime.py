@@ -302,10 +302,7 @@ def _embed_chunk_sync(
         try:
             vectors = model.embed_documents(inputs)
             elapsed_ms = (time.monotonic() - start) * 1000
-            return [
-                {"vector": list(v), "dim": len(v), "elapsed_ms": elapsed_ms, "error": None}
-                for v in vectors
-            ]
+            return [{"vector": list(v), "dim": len(v), "elapsed_ms": elapsed_ms, "error": None} for v in vectors]
         except Exception as exc:
             if attempt < retries:
                 wait = backoff * (2**attempt) if backoff > 0 else 0.0
@@ -315,10 +312,7 @@ def _embed_chunk_sync(
                 continue
             elapsed_ms = (time.monotonic() - start) * 1000
             err = f"{type(exc).__name__}: {exc}"
-            return [
-                {"vector": None, "dim": 0, "elapsed_ms": elapsed_ms, "error": err}
-                for _ in inputs
-            ]
+            return [{"vector": None, "dim": 0, "elapsed_ms": elapsed_ms, "error": err} for _ in inputs]
 
 
 def _dedupe_indices(texts: list[Any], cache: bool) -> tuple[list[int], list[int]]:
@@ -436,10 +430,7 @@ async def _embed_chunk_async(
             try:
                 vectors = await model.aembed_documents(inputs)
                 elapsed_ms = (time.monotonic() - start) * 1000
-                return [
-                    {"vector": list(v), "dim": len(v), "elapsed_ms": elapsed_ms, "error": None}
-                    for v in vectors
-                ]
+                return [{"vector": list(v), "dim": len(v), "elapsed_ms": elapsed_ms, "error": None} for v in vectors]
             except Exception as exc:
                 if attempt < retries:
                     wait = backoff * (2**attempt) if backoff > 0 else 0.0
@@ -449,10 +440,7 @@ async def _embed_chunk_async(
                     continue
                 elapsed_ms = (time.monotonic() - start) * 1000
                 err = f"{type(exc).__name__}: {exc}"
-                return [
-                    {"vector": None, "dim": 0, "elapsed_ms": elapsed_ms, "error": err}
-                    for _ in inputs
-                ]
+                return [{"vector": None, "dim": 0, "elapsed_ms": elapsed_ms, "error": err} for _ in inputs]
 
     if semaphore is None:
         return await _go()
