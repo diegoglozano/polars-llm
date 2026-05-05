@@ -603,6 +603,130 @@ def test_chunked_embed_invalid_chunk_size(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 # --------------------------------------------------------------------------
+# `dim=` opt-in to Array(Float64, dim)
+# --------------------------------------------------------------------------
+def test_embed_dim_returns_array(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [1.0, 2.0, 3.0])
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a", "b"]})
+    out = df.with_columns(pl.col("prompt").llm.openai_embed(model="m", dim=3).alias("v"))
+
+    assert out.schema["v"] == pl.Array(pl.Float64, 3)
+    assert out["v"].to_list() == [[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]
+
+
+def test_embed_no_dim_returns_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [1.0, 2.0])
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a"]})
+    out = df.with_columns(pl.col("prompt").llm.openai_embed(model="m").alias("v"))
+
+    assert out.schema["v"] == pl.List(pl.Float64)
+
+
+def test_embed_dim_mismatch_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [1.0, 2.0])  # actual dim = 2
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a"]})
+    with pytest.raises(Exception):  # noqa: B017 — polars raises its own ShapeError
+        df.with_columns(pl.col("prompt").llm.openai_embed(model="m", dim=3).alias("v"))
+
+
+def test_embed_dim_chunked(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [float(len(t)), 0.0])
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a", "bb", "ccc"]})
+    out = df.with_columns(
+        pl.col("prompt").llm.openai_embed(model="m", chunk_size=2, dim=2).alias("v"),
+    )
+
+    assert out.schema["v"] == pl.Array(pl.Float64, 2)
+    assert out["v"].to_list() == [[1.0, 0.0], [2.0, 0.0], [3.0, 0.0]]
+
+
+def test_embed_dim_async(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [9.0, 8.0])
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a", "b"]})
+    out = df.with_columns(pl.col("prompt").llm.aopenai_embed(model="m", dim=2).alias("v"))
+
+    assert out.schema["v"] == pl.Array(pl.Float64, 2)
+
+
+def test_cosine_works_on_array_column(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [1.0, 0.0])
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a"]})
+    df = df.with_columns(pl.col("prompt").llm.openai_embed(model="m", dim=2).alias("v"))
+    assert df.schema["v"] == pl.Array(pl.Float64, 2)
+
+    out = df.with_columns(cos=pl.col("v").llm.cosine([1.0, 0.0]))
+    assert out["cos"].to_list() == pytest.approx([1.0])
+
+
+# --------------------------------------------------------------------------
+# Vector helpers (no provider call)
+# --------------------------------------------------------------------------
+def test_cosine_between_two_columns() -> None:
+    df = pl.DataFrame({
+        "a": [[1.0, 2.0, 3.0], [1.0, 0.0, 0.0]],
+        "b": [[4.0, 5.0, 6.0], [0.0, 1.0, 0.0]],
+    })
+    out = df.with_columns(cos=pl.col("a").llm.cosine(pl.col("b")))
+
+    cos = out["cos"].to_list()
+    assert cos[0] == pytest.approx(32 / (14**0.5 * 77**0.5))
+    assert cos[1] == pytest.approx(0.0)
+
+
+def test_cosine_against_literal_list() -> None:
+    df = pl.DataFrame({"a": [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]})
+    out = df.with_columns(cos=pl.col("a").llm.cosine([1.0, 0.0]))
+
+    cos = out["cos"].to_list()
+    assert cos[0] == pytest.approx(1.0)
+    assert cos[1] == pytest.approx(0.0)
+    assert cos[2] == pytest.approx(1 / (2**0.5))
+
+
+def test_cosine_against_series() -> None:
+    df = pl.DataFrame({"a": [[1.0, 0.0], [0.0, 1.0]]})
+    ref = pl.Series("", [[1.0, 0.0]], dtype=pl.List(pl.Float64))
+    out = df.with_columns(cos=pl.col("a").llm.cosine(ref))
+
+    assert out["cos"].to_list() == pytest.approx([1.0, 0.0])
+
+
+def test_cosine_null_propagates() -> None:
+    df = pl.DataFrame({"a": [[1.0, 0.0], None], "b": [[1.0, 0.0], [1.0, 0.0]]})
+    out = df.with_columns(cos=pl.col("a").llm.cosine(pl.col("b")))
+
+    cos = out["cos"].to_list()
+    assert cos[0] == pytest.approx(1.0)
+    assert cos[1] is None
+
+
+def test_cosine_zero_vector_is_nan() -> None:
+    df = pl.DataFrame({"a": [[0.0, 0.0]], "b": [[1.0, 1.0]]})
+    out = df.with_columns(cos=pl.col("a").llm.cosine(pl.col("b")))
+
+    val = out["cos"].to_list()[0]
+    assert val != val  # NaN
+
+
+def test_cosine_invalid_type_raises() -> None:
+    df = pl.DataFrame({"a": [[1.0, 0.0]]})
+    with pytest.raises(TypeError, match="cosine"):
+        df.with_columns(cos=pl.col("a").llm.cosine(42))
+
+
+# --------------------------------------------------------------------------
 # Optional-extra import errors
 # --------------------------------------------------------------------------
 def test_missing_provider_raises_import_error(monkeypatch: pytest.MonkeyPatch) -> None:

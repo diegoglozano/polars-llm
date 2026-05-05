@@ -17,6 +17,7 @@ A running list of features to consider for `polars-llm`. Ordered roughly by valu
 - Optional provider extras: `polars-llm[openai]`, `[anthropic]`, `[gemini]`, `[all]` so the base install stays light.
 - Bring-your-own client: pass any preconfigured LangChain chat / embeddings instance via `client=` to skip the in-tree constructor.
 - `**model_kwargs` pass-through (temperature, max_tokens, timeout, base_url, …).
+- Cosine similarity helper (`pl.col("a").llm.cosine(pl.col("b"))`) that lowers to native Polars arithmetic — no API call.
 
 ## Remaining
 
@@ -68,7 +69,6 @@ A running list of features to consider for `polars-llm`. Ordered roughly by valu
 ### Embedding ergonomics
 
 - **Chunked embeddings** — `embed_documents` accepts a list, so a `chunk_size=` knob would issue one API call per N rows for ~10× cheaper embedding generation.
-- **Similarity helpers** — `pl.col("vector_a").llm.cosine(pl.col("vector_b"))` sugar that lowers to a Polars expression (no provider call).
 - **ANN join** — `df.llm.knn(other, on="vector", k=5)` to do a top-K join against another DataFrame of embeddings, backed by either brute-force or `hnswlib`.
 
 ### Default-model configuration
