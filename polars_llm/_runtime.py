@@ -498,6 +498,7 @@ def embed_results_to_series(
     *,
     with_metadata: bool,
     on_error: OnError,
+    dim: int | None = None,
 ) -> pl.Series:
     if with_metadata:
         return pl.Series(results, dtype=_EMBED_METADATA_DTYPE)
@@ -513,6 +514,8 @@ def embed_results_to_series(
             out.append(None)
             silent_errors.append(r["error"])
     _warn_silent_errors(silent_errors, len(results))
+    if dim is not None:
+        return pl.Series(out, dtype=pl.Array(pl.Float64, dim))
     return pl.Series(out, dtype=pl.List(pl.Float64))
 
 
@@ -552,8 +555,14 @@ def embed_map_batches(
     *,
     with_metadata: bool,
     on_error: OnError,
+    dim: int | None = None,
 ) -> pl.Expr:
-    return_dtype = _EMBED_METADATA_DTYPE if with_metadata else pl.List(pl.Float64)
+    if with_metadata:
+        return_dtype: Any = _EMBED_METADATA_DTYPE
+    elif dim is not None:
+        return_dtype = pl.Array(pl.Float64, dim)
+    else:
+        return_dtype = pl.List(pl.Float64)
 
     def _batch(s: pl.Series) -> pl.Series:
         texts = s.to_list()
@@ -562,6 +571,7 @@ def embed_map_batches(
             results,
             with_metadata=with_metadata,
             on_error=on_error,
+            dim=dim,
         )
 
     return text_expr.map_batches(_batch, return_dtype=return_dtype)

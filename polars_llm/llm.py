@@ -6,6 +6,9 @@ verb per provider (``openai``, ``anthropic``, ``gemini``) plus async variants
 (``aopenai``, ``aanthropic``, ``agemini``) and embedding variants
 (``openai_embed`` / ``gemini_embed`` and their async counterparts).
 
+Vector columns produced by the embedding verbs additionally gain a
+``cosine`` helper that lowers to native Polars arithmetic (no API call).
+
 Provider SDKs are optional extras: install ``polars-llm[openai]``,
 ``polars-llm[anthropic]``, ``polars-llm[gemini]``, or ``polars-llm[all]``.
 """
@@ -192,6 +195,7 @@ class Llm:
         backoff: float,
         cache: bool,
         chunk_size: int | None,
+        dim: int | None,
         with_metadata: bool,
         on_error: OnError,
     ) -> pl.Expr:
@@ -205,7 +209,13 @@ class Llm:
                 chunk_size=chunk_size,
             )
 
-        return embed_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+        return embed_map_batches(
+            self._prompt,
+            runner,
+            with_metadata=with_metadata,
+            on_error=on_error,
+            dim=dim,
+        )
 
     def _aembed(
         self,
@@ -216,6 +226,7 @@ class Llm:
         max_concurrency: int | None,
         cache: bool,
         chunk_size: int | None,
+        dim: int | None,
         with_metadata: bool,
         on_error: OnError,
     ) -> pl.Expr:
@@ -232,7 +243,13 @@ class Llm:
                 ),
             )
 
-        return embed_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+        return embed_map_batches(
+            self._prompt,
+            runner,
+            with_metadata=with_metadata,
+            on_error=on_error,
+            dim=dim,
+        )
 
     # ============================================================
     # Public chat verbs
@@ -422,6 +439,7 @@ class Llm:
         backoff: float = 0.0,
         cache: bool = False,
         chunk_size: int | None = None,
+        dim: int | None = None,
         with_metadata: bool = False,
         on_error: OnError = "null",
         **model_kwargs: Any,
@@ -430,6 +448,8 @@ class Llm:
 
         Pass ``chunk_size=N`` to batch ``N`` rows into a single
         ``embed_documents`` call (cheaper / faster for corpus-style embedding).
+        Pass ``dim=N`` to return ``Array(Float64, N)`` instead of the default
+        ``List(Float64)`` (catches dim drift, plays nicely with vector libs).
         """
         embedder = _make_embed("openai", model, client, model_kwargs)
         return self._embed(
@@ -438,6 +458,7 @@ class Llm:
             backoff=backoff,
             cache=cache,
             chunk_size=chunk_size,
+            dim=dim,
             with_metadata=with_metadata,
             on_error=on_error,
         )
@@ -452,6 +473,7 @@ class Llm:
         max_concurrency: int | None = None,
         cache: bool = False,
         chunk_size: int | None = None,
+        dim: int | None = None,
         with_metadata: bool = False,
         on_error: OnError = "null",
         **model_kwargs: Any,
@@ -459,7 +481,8 @@ class Llm:
         """Compute OpenAI embeddings concurrently across the batch.
 
         Pass ``chunk_size=N`` to batch ``N`` rows per ``aembed_documents``
-        call; ``max_concurrency`` then caps in-flight chunk calls.
+        call; ``max_concurrency`` then caps in-flight chunk calls. Pass
+        ``dim=N`` to return ``Array(Float64, N)`` instead of ``List(Float64)``.
         """
         embedder = _make_embed("openai", model, client, model_kwargs)
         return self._aembed(
@@ -469,6 +492,7 @@ class Llm:
             max_concurrency=max_concurrency,
             cache=cache,
             chunk_size=chunk_size,
+            dim=dim,
             with_metadata=with_metadata,
             on_error=on_error,
         )
@@ -482,6 +506,7 @@ class Llm:
         backoff: float = 0.0,
         cache: bool = False,
         chunk_size: int | None = None,
+        dim: int | None = None,
         with_metadata: bool = False,
         on_error: OnError = "null",
         **model_kwargs: Any,
@@ -489,7 +514,8 @@ class Llm:
         """Compute Gemini embeddings per row, sync.
 
         Pass ``chunk_size=N`` to batch ``N`` rows into a single
-        ``embed_documents`` call.
+        ``embed_documents`` call. Pass ``dim=N`` to return
+        ``Array(Float64, N)`` instead of ``List(Float64)``.
         """
         embedder = _make_embed("gemini", model, client, model_kwargs)
         return self._embed(
@@ -498,6 +524,7 @@ class Llm:
             backoff=backoff,
             cache=cache,
             chunk_size=chunk_size,
+            dim=dim,
             with_metadata=with_metadata,
             on_error=on_error,
         )
@@ -512,6 +539,7 @@ class Llm:
         max_concurrency: int | None = None,
         cache: bool = False,
         chunk_size: int | None = None,
+        dim: int | None = None,
         with_metadata: bool = False,
         on_error: OnError = "null",
         **model_kwargs: Any,
@@ -519,7 +547,8 @@ class Llm:
         """Compute Gemini embeddings concurrently across the batch.
 
         Pass ``chunk_size=N`` to batch ``N`` rows per ``aembed_documents``
-        call; ``max_concurrency`` then caps in-flight chunk calls.
+        call; ``max_concurrency`` then caps in-flight chunk calls. Pass
+        ``dim=N`` to return ``Array(Float64, N)`` instead of ``List(Float64)``.
         """
         embedder = _make_embed("gemini", model, client, model_kwargs)
         return self._aembed(
@@ -529,6 +558,41 @@ class Llm:
             max_concurrency=max_concurrency,
             cache=cache,
             chunk_size=chunk_size,
+            dim=dim,
             with_metadata=with_metadata,
             on_error=on_error,
         )
+
+    # ============================================================
+    # Vector helpers (no provider call)
+    # ============================================================
+
+    def cosine(self, other: pl.Expr | pl.Series | list[float] | tuple[float, ...]) -> pl.Expr:
+        """Cosine similarity between this vector column and ``other``.
+
+        Accepts both ``Array(Float64, dim)`` and ``List(Float64)`` inputs;
+        they are cast to ``List`` internally so the math is uniform. ``other``
+        may be a ``pl.Expr`` (e.g. ``pl.col("vector_b")``), a ``pl.Series``,
+        or a literal Python list/tuple of floats (broadcast against every
+        row). Returns a ``Float64`` expression.
+
+        Lowers to native Polars arithmetic — no API call is made. Rows where
+        either vector is null produce ``null``; rows where either vector is
+        all-zero produce ``NaN`` (0/0).
+        """
+        list_dtype = pl.List(pl.Float64)
+        a = self._prompt.cast(list_dtype)
+        if isinstance(other, pl.Expr):
+            b: pl.Expr = other.cast(list_dtype)
+        elif isinstance(other, pl.Series):
+            b = pl.lit(other).cast(list_dtype)
+        elif isinstance(other, (list, tuple)):
+            b = pl.lit(pl.Series("", [list(other)], dtype=list_dtype))
+        else:
+            raise TypeError(
+                "polars-llm: `cosine` expects a pl.Expr, pl.Series, or list of floats; " f"got {type(other).__name__}",
+            )
+        dot = (a * b).list.sum()
+        norm_a = (a * a).list.sum().sqrt()
+        norm_b = (b * b).list.sum().sqrt()
+        return dot / (norm_a * norm_b)
