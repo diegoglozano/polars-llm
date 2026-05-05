@@ -35,6 +35,7 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 - **Per-row prompts and system messages** — both the prompt and the system message can be Polars expressions, so you can build them from other columns.
 - **Structured outputs** — pass a Pydantic model as `schema=` to get a struct column back, parsed via LangChain's `with_structured_output`.
 - **Embeddings, too** — `openai_embed` and `gemini_embed` return `List[Float64]` columns ready for vector search.
+- **Top-K nearest-neighbour join** — `df.ann.knn(other, on="vector", k=5)` joins one DataFrame of embeddings against another, with a brute-force NumPy default and an optional [`usearch`](https://github.com/unum-cloud/usearch) HNSW backend for larger corpora.
 - **Powered by [LangChain](https://python.langchain.com/)** — you get the same retries, batching, and observability primitives the rest of the LangChain ecosystem uses, plumbed straight into a DataFrame.
 
 Common use cases:
@@ -53,6 +54,9 @@ Common use cases:
 pip install "polars-llm[openai]"
 pip install "polars-llm[anthropic]"
 pip install "polars-llm[gemini]"
+
+# Top-K nearest-neighbour joins (adds usearch + numpy)
+pip install "polars-llm[ann]"
 
 # Or all of them
 pip install "polars-llm[all]"
@@ -140,7 +144,38 @@ df.with_columns(
 )
 ```
 
-### 6. Retries, caching, metadata
+### 6. Top-K nearest-neighbour join
+
+Once you have an embedding column on each side, `df.ann.knn` returns the `k` closest rows from `other` for every row of `df`:
+
+```python
+import polars as pl
+import polars_llm  # noqa: F401  — registers the `.ann` namespace
+
+queries = pl.DataFrame({
+    "q_id": ["q1", "q2"],
+    "vector": [[0.9, 0.1], [0.0, 1.0]],
+})
+docs = pl.DataFrame({
+    "doc_id": ["a", "b", "c"],
+    "vector": [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+})
+
+queries.ann.knn(docs, on="vector", k=2)
+# shape: (4, 5)
+# ┌──────┬───────────┬────────┬──────┬──────────┐
+# │ q_id ┆ vector    ┆ doc_id ┆ rank ┆ score    │
+# ╞══════╪═══════════╪════════╪══════╪══════════╡
+# │ q1   ┆ [0.9,0.1] ┆ a      ┆ 0    ┆ 0.005…   │
+# │ q1   ┆ [0.9,0.1] ┆ c      ┆ 1    ┆ 0.071…   │
+# │ q2   ┆ [0.0,1.0] ┆ b      ┆ 0    ┆ 0.0      │
+# │ q2   ┆ [0.0,1.0] ┆ c      ┆ 1    ┆ 0.293…   │
+# └──────┴───────────┴────────┴──────┴──────────┘
+```
+
+`backend="auto"` (default) uses brute-force NumPy under ~50k rows and switches to `usearch` HNSW for larger corpora when the `[ann]` extra is installed. Force one with `backend="brute"` or `backend="usearch"`. Pass `flat=False` to get a `neighbors: List[Struct]` column instead of a flat join. Lower `score` = closer match.
+
+### 7. Retries, caching, metadata
 
 ```python
 pl.col("user_prompt").llm.aanthropic(
@@ -173,6 +208,23 @@ All methods live under the `.llm` namespace on any Polars expression that resolv
 | `gemini_embed` / `agemini_embed` | Google Gemini     | sync / async |
 
 > Anthropic does not currently offer a first-party embeddings API.
+
+### DataFrame `.ann` namespace
+
+`df.ann.knn(other, **kwargs)` — top-K nearest-neighbour join between two DataFrames of vectors.
+
+| Argument                    | Default            | Notes                                                                                                 |
+| --------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------- |
+| `on` / `left_on`/`right_on` | —                  | Vector column name(s). Use `on=` when both sides share a name, otherwise both `*_on`.                 |
+| `k`                         | `5`                | Number of neighbours per row. Clamped to `len(other)`.                                                |
+| `metric`                    | `"cosine"`         | One of `"cosine"`, `"ip"`, `"l2"` (squared L2). Lower score = closer match.                           |
+| `backend`                   | `"auto"`           | `"auto"` switches to `usearch` above ~50k right rows when installed; otherwise `"brute"`.             |
+| `flat`                      | `True`             | `True` → `len(df) * k` rows. `False` → one row per query with a `List[Struct]` `neighbors` col.       |
+| `suffix`                    | `"_right"`         | Right-side column collision suffix (flat output only).                                                |
+| `rank_name`/`score_name`    | `"rank"`/`"score"` | Names of the added rank and distance columns.                                                         |
+| `**backend_kwargs`          | —                  | Forwarded to `usearch.index.Index` (`connectivity`, `expansion_add`, `expansion_search`, `dtype`, …). |
+
+The vector columns must be `List[Float32/64]` or `Array[Float32/64, dim]`, and dimensions must match between the two DataFrames.
 
 ### Common arguments
 
