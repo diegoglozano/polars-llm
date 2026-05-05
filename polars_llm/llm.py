@@ -191,11 +191,19 @@ class Llm:
         retries: int,
         backoff: float,
         cache: bool,
+        chunk_size: int | None,
         with_metadata: bool,
         on_error: OnError,
     ) -> pl.Expr:
         def runner(texts: list[Any]) -> list[dict[str, Any]]:
-            return embed_batch_sync(embedder, texts, retries=retries, backoff=backoff, cache=cache)
+            return embed_batch_sync(
+                embedder,
+                texts,
+                retries=retries,
+                backoff=backoff,
+                cache=cache,
+                chunk_size=chunk_size,
+            )
 
         return embed_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
 
@@ -207,6 +215,7 @@ class Llm:
         backoff: float,
         max_concurrency: int | None,
         cache: bool,
+        chunk_size: int | None,
         with_metadata: bool,
         on_error: OnError,
     ) -> pl.Expr:
@@ -219,6 +228,7 @@ class Llm:
                     backoff=backoff,
                     max_concurrency=max_concurrency,
                     cache=cache,
+                    chunk_size=chunk_size,
                 ),
             )
 
@@ -411,17 +421,23 @@ class Llm:
         retries: int = 0,
         backoff: float = 0.0,
         cache: bool = False,
+        chunk_size: int | None = None,
         with_metadata: bool = False,
         on_error: OnError = "null",
         **model_kwargs: Any,
     ) -> pl.Expr:
-        """Compute OpenAI embeddings per row, sync."""
+        """Compute OpenAI embeddings per row, sync.
+
+        Pass ``chunk_size=N`` to batch ``N`` rows into a single
+        ``embed_documents`` call (cheaper / faster for corpus-style embedding).
+        """
         embedder = _make_embed("openai", model, client, model_kwargs)
         return self._embed(
             embedder,
             retries=retries,
             backoff=backoff,
             cache=cache,
+            chunk_size=chunk_size,
             with_metadata=with_metadata,
             on_error=on_error,
         )
@@ -435,11 +451,16 @@ class Llm:
         backoff: float = 0.0,
         max_concurrency: int | None = None,
         cache: bool = False,
+        chunk_size: int | None = None,
         with_metadata: bool = False,
         on_error: OnError = "null",
         **model_kwargs: Any,
     ) -> pl.Expr:
-        """Compute OpenAI embeddings concurrently across the batch."""
+        """Compute OpenAI embeddings concurrently across the batch.
+
+        Pass ``chunk_size=N`` to batch ``N`` rows per ``aembed_documents``
+        call; ``max_concurrency`` then caps in-flight chunk calls.
+        """
         embedder = _make_embed("openai", model, client, model_kwargs)
         return self._aembed(
             embedder,
@@ -447,6 +468,7 @@ class Llm:
             backoff=backoff,
             max_concurrency=max_concurrency,
             cache=cache,
+            chunk_size=chunk_size,
             with_metadata=with_metadata,
             on_error=on_error,
         )
@@ -459,17 +481,23 @@ class Llm:
         retries: int = 0,
         backoff: float = 0.0,
         cache: bool = False,
+        chunk_size: int | None = None,
         with_metadata: bool = False,
         on_error: OnError = "null",
         **model_kwargs: Any,
     ) -> pl.Expr:
-        """Compute Gemini embeddings per row, sync."""
+        """Compute Gemini embeddings per row, sync.
+
+        Pass ``chunk_size=N`` to batch ``N`` rows into a single
+        ``embed_documents`` call.
+        """
         embedder = _make_embed("gemini", model, client, model_kwargs)
         return self._embed(
             embedder,
             retries=retries,
             backoff=backoff,
             cache=cache,
+            chunk_size=chunk_size,
             with_metadata=with_metadata,
             on_error=on_error,
         )
@@ -483,11 +511,16 @@ class Llm:
         backoff: float = 0.0,
         max_concurrency: int | None = None,
         cache: bool = False,
+        chunk_size: int | None = None,
         with_metadata: bool = False,
         on_error: OnError = "null",
         **model_kwargs: Any,
     ) -> pl.Expr:
-        """Compute Gemini embeddings concurrently across the batch."""
+        """Compute Gemini embeddings concurrently across the batch.
+
+        Pass ``chunk_size=N`` to batch ``N`` rows per ``aembed_documents``
+        call; ``max_concurrency`` then caps in-flight chunk calls.
+        """
         embedder = _make_embed("gemini", model, client, model_kwargs)
         return self._aembed(
             embedder,
@@ -495,6 +528,7 @@ class Llm:
             backoff=backoff,
             max_concurrency=max_concurrency,
             cache=cache,
+            chunk_size=chunk_size,
             with_metadata=with_metadata,
             on_error=on_error,
         )

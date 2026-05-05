@@ -289,6 +289,58 @@ def _embed_one_sync(
             }
 
 
+def _embed_chunk_sync(
+    model: Any,
+    texts: list[Any],
+    retries: int,
+    backoff: float,
+) -> list[dict[str, Any]]:
+    inputs = [str(t) if t is not None else "" for t in texts]
+    attempt = 0
+    start = time.monotonic()
+    while True:
+        try:
+            vectors = model.embed_documents(inputs)
+            elapsed_ms = (time.monotonic() - start) * 1000
+            return [
+                {"vector": list(v), "dim": len(v), "elapsed_ms": elapsed_ms, "error": None}
+                for v in vectors
+            ]
+        except Exception as exc:
+            if attempt < retries:
+                wait = backoff * (2**attempt) if backoff > 0 else 0.0
+                if wait > 0:
+                    time.sleep(wait)
+                attempt += 1
+                continue
+            elapsed_ms = (time.monotonic() - start) * 1000
+            err = f"{type(exc).__name__}: {exc}"
+            return [
+                {"vector": None, "dim": 0, "elapsed_ms": elapsed_ms, "error": err}
+                for _ in inputs
+            ]
+
+
+def _dedupe_indices(texts: list[Any], cache: bool) -> tuple[list[int], list[int]]:
+    """Return (order, result_index) so that unique texts are at positions
+    `[texts[i] for i in order]` and `result_index[i]` maps row i to its slot
+    in that unique list. When `cache=False`, returns the identity mapping."""
+    if not cache:
+        return list(range(len(texts))), list(range(len(texts)))
+    unique_indices: dict[Any, int] = {}
+    order: list[int] = []
+    result_index: list[int] = [0] * len(texts)
+    for i, text in enumerate(texts):
+        key = _hashable(text)
+        if key in unique_indices:
+            result_index[i] = unique_indices[key]
+            continue
+        unique_indices[key] = len(order)
+        result_index[i] = len(order)
+        order.append(i)
+    return order, result_index
+
+
 def embed_batch_sync(
     model: Any,
     texts: list[Any],
@@ -296,7 +348,19 @@ def embed_batch_sync(
     retries: int,
     backoff: float,
     cache: bool,
+    chunk_size: int | None = None,
 ) -> list[dict[str, Any]]:
+    if chunk_size is not None:
+        if chunk_size < 1:
+            raise ValueError("polars-llm: `chunk_size` must be >= 1")
+        order, result_index = _dedupe_indices(texts, cache)
+        unique_texts = [texts[idx] for idx in order]
+        unique_results: list[dict[str, Any]] = []
+        for start in range(0, len(unique_texts), chunk_size):
+            chunk = unique_texts[start : start + chunk_size]
+            unique_results.extend(_embed_chunk_sync(model, chunk, retries, backoff))
+        return [unique_results[result_index[i]] for i in range(len(texts))]
+
     results: list[dict[str, Any] | None] = [None] * len(texts)
     memo: dict[Any, dict[str, Any]] = {}
     for i, text in enumerate(texts):
@@ -356,6 +420,46 @@ async def _embed_one_async(
         return await _go()
 
 
+async def _embed_chunk_async(
+    model: Any,
+    semaphore: asyncio.Semaphore | None,
+    texts: list[Any],
+    retries: int,
+    backoff: float,
+) -> list[dict[str, Any]]:
+    inputs = [str(t) if t is not None else "" for t in texts]
+
+    async def _go() -> list[dict[str, Any]]:
+        attempt = 0
+        start = time.monotonic()
+        while True:
+            try:
+                vectors = await model.aembed_documents(inputs)
+                elapsed_ms = (time.monotonic() - start) * 1000
+                return [
+                    {"vector": list(v), "dim": len(v), "elapsed_ms": elapsed_ms, "error": None}
+                    for v in vectors
+                ]
+            except Exception as exc:
+                if attempt < retries:
+                    wait = backoff * (2**attempt) if backoff > 0 else 0.0
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                    attempt += 1
+                    continue
+                elapsed_ms = (time.monotonic() - start) * 1000
+                err = f"{type(exc).__name__}: {exc}"
+                return [
+                    {"vector": None, "dim": 0, "elapsed_ms": elapsed_ms, "error": err}
+                    for _ in inputs
+                ]
+
+    if semaphore is None:
+        return await _go()
+    async with semaphore:
+        return await _go()
+
+
 async def embed_batch_async(
     model: Any,
     texts: list[Any],
@@ -364,8 +468,20 @@ async def embed_batch_async(
     backoff: float,
     max_concurrency: int | None,
     cache: bool,
+    chunk_size: int | None = None,
 ) -> list[dict[str, Any]]:
     semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
+
+    if chunk_size is not None:
+        if chunk_size < 1:
+            raise ValueError("polars-llm: `chunk_size` must be >= 1")
+        order, result_index = _dedupe_indices(texts, cache)
+        unique_texts = [texts[idx] for idx in order]
+        chunks = [unique_texts[i : i + chunk_size] for i in range(0, len(unique_texts), chunk_size)]
+        tasks = [_embed_chunk_async(model, semaphore, chunk, retries, backoff) for chunk in chunks]
+        chunk_results = await asyncio.gather(*tasks)
+        unique_results = [r for chunk in chunk_results for r in chunk]
+        return [unique_results[result_index[i]] for i in range(len(texts))]
 
     unique_indices: dict[Any, int] = {}
     order: list[int] = []

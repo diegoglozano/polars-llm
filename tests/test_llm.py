@@ -115,17 +115,26 @@ class CallbackChat(BaseChatModel):
 
 
 class CallbackEmbeddings(Embeddings):
-    """An `Embeddings` test fake driven by a Python callback."""
+    """An `Embeddings` test fake driven by a Python callback.
+
+    Tracks every ``embed_query`` call in ``calls`` and every batched
+    ``embed_documents`` / ``aembed_documents`` call in ``doc_calls`` so tests
+    can assert chunking behavior. ``fail_doc_first=N`` makes the first N
+    ``embed_documents`` invocations raise (for chunk-level retry tests).
+    """
 
     def __init__(
         self,
         fn: Callable[[str], list[float]] | None = None,
         *,
         fail_first: int = 0,
+        fail_doc_first: int = 0,
     ) -> None:
         self._fn = fn or (lambda t: [float(len(t)), 0.0, 0.0])
         self._fail_first = fail_first
+        self._fail_doc_first = fail_doc_first
         self.calls: list[str] = []
+        self.doc_calls: list[list[str]] = []
 
     def embed_query(self, text: str) -> list[float]:
         self.calls.append(text)
@@ -134,13 +143,16 @@ class CallbackEmbeddings(Embeddings):
         return self._fn(text)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self.embed_query(t) for t in texts]
+        self.doc_calls.append(list(texts))
+        if len(self.doc_calls) <= self._fail_doc_first:
+            raise RuntimeError("simulated embed_documents failure")
+        return [self._fn(t) for t in texts]
 
     async def aembed_query(self, text: str) -> list[float]:
         return self.embed_query(text)
 
     async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [await self.aembed_query(t) for t in texts]
+        return self.embed_documents(texts)
 
 
 def _patch_chat(monkeypatch: pytest.MonkeyPatch, attr: str, fake: Any) -> None:
@@ -488,6 +500,106 @@ def test_embed_cache_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert out["v"].to_list() == [[1.0], [1.0], [2.0], [1.0]]
     assert len(fake.calls) == 2
+
+
+# --------------------------------------------------------------------------
+# Chunked embeddings
+# --------------------------------------------------------------------------
+def test_chunked_embed_sync_batches_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [float(len(t))])
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a", "bb", "ccc", "dddd", "eeeee"]})
+    out = df.with_columns(
+        pl.col("prompt").llm.openai_embed(model="m", chunk_size=2).alias("v"),
+    )
+
+    assert out["v"].to_list() == [[1.0], [2.0], [3.0], [4.0], [5.0]]
+    # 5 inputs at chunk_size=2 → 3 batched calls of sizes [2, 2, 1]
+    assert [len(c) for c in fake.doc_calls] == [2, 2, 1]
+    # Per-row embed_query is bypassed in chunked mode
+    assert fake.calls == []
+
+
+def test_chunked_embed_async_batches_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [float(len(t))])
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a", "bb", "ccc", "dddd"]})
+    out = df.with_columns(
+        pl.col("prompt").llm.aopenai_embed(model="m", chunk_size=3).alias("v"),
+    )
+
+    assert out["v"].to_list() == [[1.0], [2.0], [3.0], [4.0]]
+    assert [len(c) for c in fake.doc_calls] == [3, 1]
+
+
+def test_chunked_embed_dedupes_before_chunking(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [float(len(t))])
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a", "a", "bb", "a", "ccc"]})
+    out = df.with_columns(
+        pl.col("prompt").llm.openai_embed(model="m", cache=True, chunk_size=10).alias("v"),
+    )
+
+    assert out["v"].to_list() == [[1.0], [1.0], [2.0], [1.0], [3.0]]
+    # 3 unique texts fit in a single chunk
+    assert fake.doc_calls == [["a", "bb", "ccc"]]
+
+
+def test_chunked_embed_chunk_failure_marks_all_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [0.0], fail_doc_first=1)
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a", "b", "c"]})
+    with pytest.warns(UserWarning, match=r"2/3 request\(s\) failed"):
+        out = df.with_columns(
+            pl.col("prompt").llm.openai_embed(model="m", chunk_size=2).alias("v"),
+        )
+
+    # First chunk (a, b) fails; second chunk (c) succeeds
+    assert out["v"].to_list() == [None, None, [0.0]]
+
+
+def test_chunked_embed_chunk_retry_recovers(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [float(len(t))], fail_doc_first=1)
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a", "bb"]})
+    out = df.with_columns(
+        pl.col("prompt").llm.openai_embed(model="m", chunk_size=2, retries=2, backoff=0.0).alias("v"),
+    )
+
+    assert out["v"].to_list() == [[1.0], [2.0]]
+    # 1 failed call + 1 retry call = 2 batched invocations
+    assert len(fake.doc_calls) == 2
+
+
+def test_chunked_embed_with_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings(lambda t: [float(len(t)), 0.0])
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a", "bb"]})
+    out = df.with_columns(
+        pl.col("prompt").llm.openai_embed(model="m", chunk_size=2, with_metadata=True).alias("v"),
+    )
+
+    rows = out["v"].to_list()
+    assert rows[0]["vector"] == [1.0, 0.0]
+    assert rows[0]["dim"] == 2
+    assert rows[0]["error"] is None
+    # Both rows in the chunk share the chunk's wallclock
+    assert rows[0]["elapsed_ms"] == rows[1]["elapsed_ms"]
+
+
+def test_chunked_embed_invalid_chunk_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = CallbackEmbeddings()
+    _patch_embed(monkeypatch, "OpenAIEmbeddings", fake)
+
+    df = pl.DataFrame({"prompt": ["a"]})
+    with pytest.raises(ValueError, match="chunk_size"):
+        df.with_columns(pl.col("prompt").llm.openai_embed(model="m", chunk_size=0).alias("v"))
 
 
 # --------------------------------------------------------------------------
