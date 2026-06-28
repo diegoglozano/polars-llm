@@ -40,6 +40,11 @@ requires_tiktoken_data = pytest.mark.skipif(
     reason="tiktoken BPE vocab download unavailable in this environment",
 )
 
+requires_accel = pytest.mark.skipif(
+    _tokens_module._ACCEL is None,
+    reason="native accelerator (polars-llm-accel) not installed",
+)
+
 
 # --------------------------------------------------------------------------
 # Fakes
@@ -151,6 +156,18 @@ def test_openai_tokens_with_metadata_struct() -> None:
     assert out["m"].struct.field("error")[0] is None
 
 
+@requires_accel
+@requires_tiktoken_data
+def test_openai_native_matches_udf(monkeypatch: pytest.MonkeyPatch) -> None:
+    texts = ["hello world", "<|endoftext|> literal", "a longer sentence with several tokens", "", None]
+    df = pl.DataFrame({"text": texts}, schema={"text": pl.Utf8})
+    native = df.with_columns(pl.col("text").llm.openai_tokens(model="gpt-4o").alias("n"))["n"].to_list()
+    # Force the pure-Python fallback and confirm identical counts.
+    monkeypatch.setattr(_tokens_module, "_ACCEL", None)
+    udf = df.with_columns(pl.col("text").llm.openai_tokens(model="gpt-4o").alias("n"))["n"].to_list()
+    assert native == udf
+
+
 # --------------------------------------------------------------------------
 # Anthropic — offline heuristic (native Polars)
 # --------------------------------------------------------------------------
@@ -191,7 +208,9 @@ def test_anthropic_tokens_invalid_chars_per_token() -> None:
 # Gemini — local exact (fake Gemma tokenizer)
 # --------------------------------------------------------------------------
 def test_gemini_tokens_local(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("polars_llm.llm._gemma_tokenizer", lambda _path=None: FakeGemma())
+    # Force the Python (UDF) path with a fake tokenizer: disable the native accel.
+    monkeypatch.setattr(_tokens_module, "_ACCEL", None)
+    monkeypatch.setattr(_tokens_module, "_gemma_tokenizer", lambda _path=None: FakeGemma())
 
     texts = ["one two three", "single", ""]
     df = pl.DataFrame({"text": texts})
@@ -277,7 +296,8 @@ def test_aanthropic_tokens_exact_concurrency_cap() -> None:
 
 
 def test_agemini_tokens_offline_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("polars_llm.llm._gemma_tokenizer", lambda _path=None: FakeGemma())
+    monkeypatch.setattr(_tokens_module, "_ACCEL", None)
+    monkeypatch.setattr(_tokens_module, "_gemma_tokenizer", lambda _path=None: FakeGemma())
     df = pl.DataFrame({"text": ["one two three"]})
     out = df.with_columns(pl.col("text").llm.agemini_tokens(model="gemini-2.5-pro").alias("n"))
 
@@ -350,15 +370,18 @@ def test_cost_module_level_prices_override(monkeypatch: pytest.MonkeyPatch) -> N
 # Optional extra missing
 # --------------------------------------------------------------------------
 def test_tiktoken_extra_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Disable the native accelerator so the tiktoken fallback path is exercised.
+    monkeypatch.setattr(_tokens_module, "_ACCEL", None)
     monkeypatch.setattr(_tokens_module, "_TIKTOKEN", None)
-    _tokens_module._encoding_for.cache_clear()
+    _tokens_module._encoding_by_name.cache_clear()
     df = pl.DataFrame({"text": ["hi"]})
     with pytest.raises(ImportError, match=r"polars-llm\[tokens\]"):
         df.with_columns(pl.col("text").llm.openai_tokens(model="gpt-4o").alias("n"))
-    _tokens_module._encoding_for.cache_clear()
+    _tokens_module._encoding_by_name.cache_clear()
 
 
 def test_tokenizers_extra_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_tokens_module, "_ACCEL", None)
     monkeypatch.setattr(_tokens_module, "_TOKENIZERS", None)
     _tokens_module._gemma_tokenizer.cache_clear()
     df = pl.DataFrame({"text": ["hi"]})

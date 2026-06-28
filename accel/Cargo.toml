@@ -1,0 +1,19 @@
+[package]
+name = "polars_llm_accel"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+name = "_internal"
+crate-type = ["cdylib"]
+
+[dependencies]
+polars = { version = "=0.53.0", default-features = false }
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py39"] }
+pyo3-polars = { version = "=0.26.0", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+tiktoken-rs = "0.12"
+tokenizers = { version = "0.23.1", default-features = false, features = ["onig"] }
+
+[profile.release]
+opt-level = 3

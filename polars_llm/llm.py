@@ -34,13 +34,12 @@ from ._runtime import (
 )
 from ._tokens import (
     Price,
-    _gemma_tokenizer,
     anthropic_offline_expr,
     count_batch_async,
     count_batch_sync,
-    count_gemini,
-    count_openai,
+    gemini_offline_expr,
     infer_provider,
+    openai_tokens_expr,
     price_per_token,
     tokens_map_batches,
 )
@@ -588,18 +587,17 @@ class Llm:
         with_metadata: bool = False,
         on_error: OnError = "null",
     ) -> pl.Expr:
-        """Count OpenAI tokens per row, locally and exactly via ``tiktoken``.
+        """Count OpenAI tokens per row, locally and exactly.
 
         Offline and key-free. ``model`` selects the encoding (``gpt-4o`` /
         ``gpt-4.1`` / ``o``-series → ``o200k_base``; ``gpt-4`` / ``gpt-3.5`` →
         ``cl100k_base``); unknown names fall back to ``o200k_base``. Returns
         ``Int64`` — null in → null out, ``""`` → 0.
+
+        Uses the native Rust accelerator (``polars-llm-accel``) as an in-engine
+        Polars expression when installed; otherwise a ``tiktoken`` UDF.
         """
-
-        def runner(texts: list[Any]) -> list[dict[str, Any]]:
-            return [{"tokens": c, "elapsed_ms": 0.0, "error": None} for c in count_openai(texts, model=model)]
-
-        return tokens_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+        return openai_tokens_expr(self._prompt, model=model, with_metadata=with_metadata, on_error=on_error)
 
     def gemini_tokens(
         self,
@@ -618,19 +616,19 @@ class Llm:
         """Count Gemini tokens per row.
 
         Default (``exact=False``): local, exact, key-free — Gemini shares the
-        public **Gemma** SentencePiece tokenizer (loaded once and cached), whose
-        counts match Google's API with no network. ``exact=True`` counts via the
-        Gemini API (e.g. multimodal inputs or cross-checking), batched like the
-        chat verbs.
+        public **Gemma** SentencePiece tokenizer, whose counts match Google's API
+        with no network. Uses the native Rust accelerator (``polars-llm-accel``)
+        when a local ``tokenizer_path`` (or ``POLARS_LLM_GEMMA_TOKENIZER``) is set,
+        else an HF ``tokenizers`` UDF. ``exact=True`` counts via the Gemini API
+        (e.g. multimodal inputs or cross-checking), batched like the chat verbs.
         """
         if not exact:
-            tokenizer = _gemma_tokenizer(tokenizer_path)
-
-            def runner(texts: list[Any]) -> list[dict[str, Any]]:
-                counts = count_gemini(texts, tokenizer=tokenizer)
-                return [{"tokens": c, "elapsed_ms": 0.0, "error": None} for c in counts]
-
-            return tokens_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+            return gemini_offline_expr(
+                self._prompt,
+                tokenizer_path=tokenizer_path,
+                with_metadata=with_metadata,
+                on_error=on_error,
+            )
 
         chat = _make_chat("gemini", model, client, model_kwargs)
 

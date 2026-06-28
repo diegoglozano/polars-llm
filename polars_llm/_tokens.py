@@ -47,6 +47,13 @@ _TOKENIZERS: Any = None
 with contextlib.suppress(ImportError):  # pragma: no cover - import guard
     from tokenizers import Tokenizer as _TOKENIZERS
 
+# Optional native (Rust) accelerator — `pip install polars-llm-accel`. When
+# present, the offline counting verbs lower to in-engine Polars expressions
+# (no Python UDF); otherwise they fall back to the pure-Python paths below.
+_ACCEL: Any = None
+with contextlib.suppress(ImportError):  # pragma: no cover - import guard
+    import polars_llm_accel as _ACCEL
+
 # Gemini and the open Gemma models share one SentencePiece tokenizer. The
 # canonical repo is gated on Hugging Face; override the source with a local
 # file (`tokenizer_path=` / this env var) or point at an un-gated mirror repo.
@@ -82,22 +89,39 @@ def _require_tokenizers() -> Any:
 
 
 # ============================================================
-# OpenAI — local, exact (tiktoken)
+# OpenAI — local, exact (tiktoken / native accelerator)
 # ============================================================
-@functools.cache
-def _encoding_for(model: str | None) -> Any:
-    tk = _require_tiktoken()
-    if model:
+# Prefix → encoding map so the native path can resolve an encoding name without
+# importing tiktoken (the Rust plugin bundles the vocab). Falls back to
+# tiktoken's own mapping, then to the latest base encoding.
+_OPENAI_O200K_PREFIXES = ("gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4", "chatgpt")
+_OPENAI_CL100K_PREFIXES = ("gpt-4", "gpt-3.5", "gpt-35", "davinci-002", "babbage-002", "text-embedding-ada")
+
+
+def _openai_encoding_name(model: str | None) -> str:
+    if not model:
+        return "o200k_base"
+    m = model.lower()
+    if m.startswith(_OPENAI_O200K_PREFIXES):
+        return "o200k_base"
+    if m.startswith(_OPENAI_CL100K_PREFIXES):
+        return "cl100k_base"
+    if _TIKTOKEN is not None:
         try:
-            return tk.encoding_for_model(model)
+            return _TIKTOKEN.encoding_name_for_model(model)
         except KeyError:
-            pass  # new / unknown model name — fall back to the latest base encoding
-    return tk.get_encoding("o200k_base")
+            pass
+    return "o200k_base"
 
 
-def count_openai(texts: list[Any], *, model: str | None) -> list[int | None]:
+@functools.cache
+def _encoding_by_name(name: str) -> Any:
+    return _require_tiktoken().get_encoding(name)
+
+
+def count_openai(texts: list[Any], *, encoding_name: str) -> list[int | None]:
     """Token count per row via tiktoken. ``None`` in → ``None`` out, ``""`` → 0."""
-    enc = _encoding_for(model)
+    enc = _encoding_by_name(encoding_name)
     nonnull = [i for i, t in enumerate(texts) if t is not None]
     inputs = [str(texts[i]) for i in nonnull]
     # `disallowed_special=()` so user text containing literals like
@@ -107,6 +131,21 @@ def count_openai(texts: list[Any], *, model: str | None) -> list[int | None]:
     for k, i in enumerate(nonnull):
         out[i] = len(encoded[k])
     return out
+
+
+def openai_tokens_expr(text_expr: pl.Expr, *, model: str | None, with_metadata: bool, on_error: OnError) -> pl.Expr:
+    """OpenAI token-count expression: native Rust plugin when available, else tiktoken UDF."""
+    encoding_name = _openai_encoding_name(model)
+    if _ACCEL is not None and not with_metadata:
+        return _ACCEL.count_openai(text_expr, encoding_name)
+    _require_tiktoken()
+
+    def runner(texts: list[Any]) -> list[dict[str, Any]]:
+        return [
+            {"tokens": c, "elapsed_ms": 0.0, "error": None} for c in count_openai(texts, encoding_name=encoding_name)
+        ]
+
+    return tokens_map_batches(text_expr, runner, with_metadata=with_metadata, on_error=on_error)
 
 
 # ============================================================
@@ -139,6 +178,26 @@ def count_gemini(texts: list[Any], *, tokenizer: Any) -> list[int | None]:
     for k, i in enumerate(nonnull):
         out[i] = len(encoded[k].ids)
     return out
+
+
+def gemini_offline_expr(
+    text_expr: pl.Expr,
+    *,
+    tokenizer_path: str | None,
+    with_metadata: bool,
+    on_error: OnError,
+) -> pl.Expr:
+    """Gemini offline (Gemma) count: native Rust plugin when a local tokenizer
+    path is available, else the HF ``tokenizers`` UDF (which can auto-download)."""
+    path = tokenizer_path or os.environ.get("POLARS_LLM_GEMMA_TOKENIZER")
+    if _ACCEL is not None and path and not with_metadata:
+        return _ACCEL.count_gemma(text_expr, path)
+    tokenizer = _gemma_tokenizer(tokenizer_path)
+
+    def runner(texts: list[Any]) -> list[dict[str, Any]]:
+        return [{"tokens": c, "elapsed_ms": 0.0, "error": None} for c in count_gemini(texts, tokenizer=tokenizer)]
+
+    return tokens_map_batches(text_expr, runner, with_metadata=with_metadata, on_error=on_error)
 
 
 # ============================================================

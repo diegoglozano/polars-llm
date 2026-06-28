@@ -1,19 +1,21 @@
-"""Benchmark offline token counting throughput by provider.
+"""Benchmark offline token-counting throughput by provider and engine.
 
-Compares the three local/offline counting paths over a synthetic DataFrame:
+For each provider it times the offline counting verb twice — once on the native
+Rust accelerator (``polars-llm-accel``, an in-engine Polars expression) and once
+on the pure-Python UDF fallback — and reports the speedup:
 
-* OpenAI    — ``tiktoken`` (Rust)
-* Gemini    — the shared Gemma SentencePiece tokenizer via HF ``tokenizers`` (Rust)
-* Anthropic — the ~3.5-chars/token heuristic (native Polars, no tokenizer)
+* OpenAI    — tiktoken-rs (native) vs the tiktoken UDF
+* Gemini    — the Gemma tokenizer (native) vs the HF ``tokenizers`` UDF
+* Anthropic — the ~3.5-chars/token heuristic (already native Polars; no UDF)
 
-Each provider is warmed up once (so the one-time encoding/tokenizer load is
-*not* timed), then the per-row counting is timed over several repeats and the
-best run reported. Providers whose tokenizer can't be loaded (missing extra, or
-a blocked first-use download) are skipped with the reason.
+Each path is warmed up once (so the one-time tokenizer load is *not* timed), then
+timed over several repeats; the best run is reported. Paths whose tokenizer can't
+load (missing extra, or a blocked first-use download) are skipped with the reason.
 
 Run::
 
-    pip install "polars-llm[tokens]"
+    pip install "polars-llm[tokens]"     # UDF paths
+    pip install polars-llm-accel      # native paths (or build the accel/ crate)
     python examples/benchmark_tokens.py --rows 50000
 """
 
@@ -26,8 +28,8 @@ from typing import Callable
 import polars as pl
 
 import polars_llm  # noqa: F401  registers the `.llm` namespace
+from polars_llm import _tokens as _t
 
-# A few representative lengths so the mix isn't all tiny or all huge.
 _SAMPLES = [
     "ok",
     "Summarise polars in one sentence.",
@@ -37,49 +39,65 @@ _SAMPLES = [
     "tempor incididunt ut labore et dolore magna aliqua. " * 4,
 ]
 
-_PROVIDERS: list[tuple[str, str, Callable[[], pl.Expr]]] = [
-    ("OpenAI", "tiktoken", lambda: pl.col("text").llm.openai_tokens(model="gpt-4o")),
-    ("Gemini", "Gemma SentencePiece", lambda: pl.col("text").llm.gemini_tokens(model="gemini-2.5-pro")),
-    ("Anthropic", "char heuristic", lambda: pl.col("text").llm.anthropic_tokens(model="claude-sonnet-4-6")),
+# (label, builds a fresh counting expr). Anthropic has no UDF/native split.
+_PROVIDERS: list[tuple[str, Callable[[], pl.Expr]]] = [
+    ("OpenAI", lambda: pl.col("text").llm.openai_tokens(model="gpt-4o")),
+    ("Gemini", lambda: pl.col("text").llm.gemini_tokens(model="gemini-2.5-pro")),
+    ("Anthropic (heuristic)", lambda: pl.col("text").llm.anthropic_tokens(model="claude-sonnet-4-6")),
 ]
 
 
 def _make_df(rows: int) -> pl.DataFrame:
-    texts = [_SAMPLES[i % len(_SAMPLES)] for i in range(rows)]
-    return pl.DataFrame({"text": texts})
+    return pl.DataFrame({"text": [_SAMPLES[i % len(_SAMPLES)] for i in range(rows)]})
 
 
-def _bench(build: Callable[[], pl.Expr], df: pl.DataFrame, repeats: int) -> tuple[float, int]:
-    out = df.select(build().alias("n"))  # warmup: loads the encoding/tokenizer
-    total_tokens = int(out["n"].sum())
+def _best_ms(build: Callable[[], pl.Expr], df: pl.DataFrame, repeats: int) -> float | None:
+    try:
+        df.select(build().alias("n"))  # warmup (loads tokenizer); also surfaces failures
+    except Exception:
+        return None
     best = float("inf")
     for _ in range(repeats):
         start = time.perf_counter()
         df.select(build().alias("n"))
         best = min(best, time.perf_counter() - start)
-    return best, total_tokens
+    return best * 1000.0
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--rows", type=int, default=50_000, help="number of rows to count (default 50000)")
-    parser.add_argument("--repeats", type=int, default=5, help="timed runs per provider (best is reported)")
+    parser.add_argument("--rows", type=int, default=50_000)
+    parser.add_argument("--repeats", type=int, default=5)
     args = parser.parse_args()
 
     df = _make_df(args.rows)
-    print(f"Counting {args.rows:,} rows, best of {args.repeats} runs (tokenizer load excluded)\n")
-    header = f"{'provider':<11} {'method':<22} {'best (ms)':>10} {'rows/sec':>14} {'tokens':>12}"
+    have_accel = _t._ACCEL is not None
+    print(
+        f"Counting {args.rows:,} rows, best of {args.repeats} (tokenizer load excluded); accel={'yes' if have_accel else 'no'}\n"
+    )
+    header = f"{'provider':<22} {'native (ms)':>12} {'UDF (ms)':>12} {'speedup':>9}  {'rows/sec (best)':>16}"
     print(header)
     print("-" * len(header))
 
-    for name, method, build in _PROVIDERS:
+    for name, build in _PROVIDERS:
+        # Native run (verb uses the accelerator when present).
+        native = _best_ms(build, df, args.repeats) if have_accel else None
+        # UDF run: force the pure-Python fallback.
+        saved, _t._ACCEL = _t._ACCEL, None
         try:
-            best, total_tokens = _bench(build, df, args.repeats)
-        except Exception as exc:
-            print(f"{name:<11} {method:<22} {'skipped':>10}  ({type(exc).__name__})")
+            udf = _best_ms(build, df, args.repeats)
+        finally:
+            _t._ACCEL = saved
+
+        best = min([t for t in (native, udf) if t is not None], default=None)
+        if best is None:
+            print(f"{name:<22} {'skipped':>12} {'skipped':>12} {'-':>9}  {'-':>16}")
             continue
-        rows_per_sec = args.rows / best if best > 0 else float("inf")
-        print(f"{name:<11} {method:<22} {best * 1000:>10.1f} {rows_per_sec:>14,.0f} {total_tokens:>12,}")
+        speedup = f"{udf / native:.1f}x" if (native and udf) else "-"
+        print(
+            f"{name:<22} {('-' if native is None else f'{native:.1f}'):>12} "
+            f"{('-' if udf is None else f'{udf:.1f}'):>12} {speedup:>9}  {args.rows / (best / 1000):>16,.0f}"
+        )
 
 
 if __name__ == "__main__":

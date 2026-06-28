@@ -218,6 +218,20 @@ pl.col("answer").llm.cost(model="gpt-4o", kind="output")  # price a generated co
 
 > The exact (`exact=True`) Anthropic/Gemini paths share the same `retries`, `backoff`, `max_concurrency`, and `cache` controls as the chat verbs (with `a`-prefixed async siblings `aanthropic_tokens` / `agemini_tokens`). The Gemma tokenizer is downloaded and cached on first Gemini use; point `tokenizer_path=` at a local file (or set `POLARS_LLM_GEMMA_TOKENIZER`) to skip the download.
 
+#### Optional native accelerator
+
+The OpenAI and Gemini offline counters go through a Polars `map_batches` UDF: fast at the tokenizer level, but the Python boundary (and, for OpenAI, materializing token-id lists only to count them) dominates. The optional **`polars-llm-accel`** package — a Rust [`pyo3-polars`](https://github.com/pola-rs/pyo3-polars) plugin built from the `accel/` crate — replaces that with a true *in-engine* Polars expression (no UDF). Install it alongside `polars-llm` and the `openai_tokens` / `gemini_tokens` verbs use it automatically; without it they fall back to the pure-Python path, so it's a drop-in speedup.
+
+Counting 50,000 mixed rows (best of 5, tokenizer load excluded):
+
+| Provider | native (Rust plugin) | UDF (pure-Python) | speedup |
+| -------- | -------------------- | ----------------- | ------- |
+| OpenAI (tiktoken) | ~390 ms | ~4,770 ms | **~12×** |
+| Gemini (Gemma) | ~800 ms | ~1,180 ms | ~1.5× |
+| Anthropic (heuristic) | 1.6 ms | — | already native Polars |
+
+OpenAI gains the most (its UDF allocated ~1.8M token-ids per batch just to take `len()`); Gemini gains less because its UDF already called the Rust HF `tokenizers`. The native OpenAI path also needs **no vocab download** — `tiktoken-rs` bundles it. See `examples/benchmark_tokens.py` to reproduce, and `accel/README.md` to build the wheel.
+
 ### 8. Retries, caching, metadata
 
 ```python

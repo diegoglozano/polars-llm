@@ -46,6 +46,10 @@ anthropic = ["langchain-anthropic>=0.2.0"]
 gemini = ["langchain-google-genai>=2.0.0"]
 ann = ["usearch>=2.12.0", "numpy>=1.23.0"]
 tokens = ["tiktoken>=0.8.0", "tokenizers>=0.20.0"]
+# Optional native (Rust) accelerator for token counting lives in the `accel/`
+# crate (maturin), published separately as `polars-llm-accel`. It is intentionally
+# NOT a declared extra here so the base install stays pure-Python and lockable;
+# install it alongside with `pip install polars-llm-accel` (or build `accel/`).
 all = [
     "langchain-openai>=0.2.0",
     "langchain-anthropic>=0.2.0",
@@ -81,6 +85,7 @@ dev = [
     "numpy>=1.23.0",
     "tiktoken>=0.8.0",
     "tokenizers>=0.20.0",
+    "maturin>=1.14.1",
 ]
 
 [build-system]
@@ -161,7 +166,7 @@ branch = true
 source = ["polars_llm"]
 
 [tool.deptry]
-exclude = ["examples", "tests", ".venv", "build", "dist"]
+exclude = ["examples", "tests", ".venv", "build", "dist", "accel"]
 
 [tool.deptry.per_rule_ignores]
 DEP002 = [
@@ -173,3 +178,5 @@ DEP002 = [
     "tiktoken",
     "tokenizers",
 ]
+# Optional native accelerator — imported lazily, shipped as the `accel` extra.
+DEP003 = ["polars_llm_accel"]

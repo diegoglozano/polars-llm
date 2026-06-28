@@ -1,0 +1,14 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "polars-llm-accel"
+version = "0.0.1"
+description = "Native (Rust) token-counting accelerator for polars-llm."
+requires-python = ">=3.9"
+dependencies = ["polars>=1.0.0"]
+
+[tool.maturin]
+module-name = "polars_llm_accel._internal"
+python-source = "python"
