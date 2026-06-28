@@ -15,10 +15,12 @@ Provider SDKs are optional extras: install ``polars-llm[openai]``,
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
-from typing import Any
+from typing import Any, Literal
 
 import polars as pl
+from langchain_core.messages import HumanMessage
 
 from ._runtime import (
     OnError,
@@ -29,6 +31,18 @@ from ._runtime import (
     embed_batch_async,
     embed_batch_sync,
     embed_map_batches,
+)
+from ._tokens import (
+    Price,
+    _gemma_tokenizer,
+    anthropic_offline_expr,
+    count_batch_async,
+    count_batch_sync,
+    count_gemini,
+    count_openai,
+    infer_provider,
+    price_per_token,
+    tokens_map_batches,
 )
 
 # ---- Optional provider imports ----
@@ -564,6 +578,228 @@ class Llm:
         )
 
     # ============================================================
+    # Token counting & cost estimation
+    # ============================================================
+
+    def openai_tokens(
+        self,
+        *,
+        model: str | None = None,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+    ) -> pl.Expr:
+        """Count OpenAI tokens per row, locally and exactly via ``tiktoken``.
+
+        Offline and key-free. ``model`` selects the encoding (``gpt-4o`` /
+        ``gpt-4.1`` / ``o``-series → ``o200k_base``; ``gpt-4`` / ``gpt-3.5`` →
+        ``cl100k_base``); unknown names fall back to ``o200k_base``. Returns
+        ``Int64`` — null in → null out, ``""`` → 0.
+        """
+
+        def runner(texts: list[Any]) -> list[dict[str, Any]]:
+            return [{"tokens": c, "elapsed_ms": 0.0, "error": None} for c in count_openai(texts, model=model)]
+
+        return tokens_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+
+    def gemini_tokens(
+        self,
+        *,
+        model: str | None = None,
+        exact: bool = False,
+        client: Any = None,
+        tokenizer_path: str | None = None,
+        retries: int = 0,
+        backoff: float = 0.0,
+        cache: bool = False,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+        **model_kwargs: Any,
+    ) -> pl.Expr:
+        """Count Gemini tokens per row.
+
+        Default (``exact=False``): local, exact, key-free — Gemini shares the
+        public **Gemma** SentencePiece tokenizer (loaded once and cached), whose
+        counts match Google's API with no network. ``exact=True`` counts via the
+        Gemini API (e.g. multimodal inputs or cross-checking), batched like the
+        chat verbs.
+        """
+        if not exact:
+            tokenizer = _gemma_tokenizer(tokenizer_path)
+
+            def runner(texts: list[Any]) -> list[dict[str, Any]]:
+                counts = count_gemini(texts, tokenizer=tokenizer)
+                return [{"tokens": c, "elapsed_ms": 0.0, "error": None} for c in counts]
+
+            return tokens_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+
+        chat = _make_chat("gemini", model, client, model_kwargs)
+
+        def runner(texts: list[Any]) -> list[dict[str, Any]]:
+            return count_batch_sync(chat.get_num_tokens, texts, retries=retries, backoff=backoff, cache=cache)
+
+        return tokens_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+
+    def agemini_tokens(
+        self,
+        *,
+        model: str | None = None,
+        exact: bool = False,
+        client: Any = None,
+        tokenizer_path: str | None = None,
+        retries: int = 0,
+        backoff: float = 0.0,
+        max_concurrency: int | None = None,
+        cache: bool = False,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+        **model_kwargs: Any,
+    ) -> pl.Expr:
+        """Async sibling of :meth:`gemini_tokens`.
+
+        ``max_concurrency`` applies to the ``exact=True`` API path; with
+        ``exact=False`` the local tokenizer is already used, so it delegates to
+        the offline path.
+        """
+        if not exact:
+            return self.gemini_tokens(
+                model=model,
+                tokenizer_path=tokenizer_path,
+                with_metadata=with_metadata,
+                on_error=on_error,
+            )
+        chat = _make_chat("gemini", model, client, model_kwargs)
+        counter = chat.get_num_tokens
+
+        async def acounter(text: str) -> int:
+            return await asyncio.to_thread(counter, text)
+
+        def runner(texts: list[Any]) -> list[dict[str, Any]]:
+            return _arun(
+                count_batch_async(
+                    acounter,
+                    texts,
+                    retries=retries,
+                    backoff=backoff,
+                    max_concurrency=max_concurrency,
+                    cache=cache,
+                ),
+            )
+
+        return tokens_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+
+    def _anthropic_offline(self, chars_per_token: float, with_metadata: bool) -> pl.Expr:
+        n_expr = anthropic_offline_expr(self._prompt, chars_per_token)
+        if not with_metadata:
+            return n_expr
+        return pl.struct(
+            n_expr.alias("tokens"),
+            pl.lit(None, dtype=pl.Float64).alias("elapsed_ms"),
+            pl.lit(None, dtype=pl.Utf8).alias("error"),
+        )
+
+    def anthropic_tokens(
+        self,
+        *,
+        model: str | None = None,
+        exact: bool = False,
+        chars_per_token: float = 3.5,
+        client: Any = None,
+        retries: int = 0,
+        backoff: float = 0.0,
+        cache: bool = False,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+        **model_kwargs: Any,
+    ) -> pl.Expr:
+        """Count Anthropic (Claude) tokens per row.
+
+        Claude has no public tokenizer, so the default (``exact=False``) is an
+        *estimate* using Anthropic's documented heuristic of ~1 token per
+        ``chars_per_token`` characters — offline, key-free, and lowered to native
+        Polars arithmetic. ``exact=True`` calls the ``count_tokens`` API, batched
+        like the chat verbs.
+        """
+        if not exact:
+            return self._anthropic_offline(chars_per_token, with_metadata)
+        chat = _make_chat("anthropic", model, client, model_kwargs)
+        counter = lambda text: chat.get_num_tokens_from_messages([HumanMessage(content=text)])
+
+        def runner(texts: list[Any]) -> list[dict[str, Any]]:
+            return count_batch_sync(counter, texts, retries=retries, backoff=backoff, cache=cache)
+
+        return tokens_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+
+    def aanthropic_tokens(
+        self,
+        *,
+        model: str | None = None,
+        exact: bool = False,
+        chars_per_token: float = 3.5,
+        client: Any = None,
+        retries: int = 0,
+        backoff: float = 0.0,
+        max_concurrency: int | None = None,
+        cache: bool = False,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+        **model_kwargs: Any,
+    ) -> pl.Expr:
+        """Async sibling of :meth:`anthropic_tokens`.
+
+        ``max_concurrency`` applies to the ``exact=True`` API path; the offline
+        heuristic has no network, so ``exact=False`` delegates to it.
+        """
+        if not exact:
+            return self._anthropic_offline(chars_per_token, with_metadata)
+        chat = _make_chat("anthropic", model, client, model_kwargs)
+        sync_counter = lambda text: chat.get_num_tokens_from_messages([HumanMessage(content=text)])
+
+        async def acounter(text: str) -> int:
+            return await asyncio.to_thread(sync_counter, text)
+
+        def runner(texts: list[Any]) -> list[dict[str, Any]]:
+            return _arun(
+                count_batch_async(
+                    acounter,
+                    texts,
+                    retries=retries,
+                    backoff=backoff,
+                    max_concurrency=max_concurrency,
+                    cache=cache,
+                ),
+            )
+
+        return tokens_map_batches(self._prompt, runner, with_metadata=with_metadata, on_error=on_error)
+
+    def cost(
+        self,
+        *,
+        model: str,
+        kind: Literal["input", "output"] = "input",
+        provider: Literal["openai", "anthropic", "gemini"] | None = None,
+        exact: bool = False,
+        prices: dict[str, Price] | None = None,
+        **token_kwargs: Any,
+    ) -> pl.Expr:
+        """Estimate USD cost per row as ``tokens * price``.
+
+        Counts tokens with the matching provider verb (``provider`` inferred from
+        ``model``, or forced explicitly) and multiplies by the per-token price
+        from ``polars_llm.PRICES``. ``kind="output"`` prices a generated-text
+        column at the output rate, so the same verb covers input and output.
+        Override prices per call with ``prices={...}`` or globally by mutating
+        ``polars_llm.PRICES``. Returns ``Float64``.
+        """
+        prov = provider or infer_provider(model)
+        if prov == "openai":
+            tokens = self.openai_tokens(model=model)
+        elif prov == "anthropic":
+            tokens = self.anthropic_tokens(model=model, exact=exact, **token_kwargs)
+        else:  # gemini
+            tokens = self.gemini_tokens(model=model, exact=exact, **token_kwargs)
+        return tokens.cast(pl.Float64) * price_per_token(model, kind, prices)
+
+    # ============================================================
     # Vector helpers (no provider call)
     # ============================================================
 
@@ -590,7 +826,7 @@ class Llm:
             b = pl.lit(pl.Series("", [list(other)], dtype=list_dtype))
         else:
             raise TypeError(
-                "polars-llm: `cosine` expects a pl.Expr, pl.Series, or list of floats; " f"got {type(other).__name__}",
+                f"polars-llm: `cosine` expects a pl.Expr, pl.Series, or list of floats; got {type(other).__name__}",
             )
         dot = (a * b).list.sum()
         norm_a = (a * a).list.sum().sqrt()

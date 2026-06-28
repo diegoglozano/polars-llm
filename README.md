@@ -35,6 +35,7 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 - **Per-row prompts and system messages** — both the prompt and the system message can be Polars expressions, so you can build them from other columns.
 - **Structured outputs** — pass a Pydantic model as `schema=` to get a struct column back, parsed via LangChain's `with_structured_output`.
 - **Embeddings, too** — `openai_embed` and `gemini_embed` return `List[Float64]` columns ready for vector search.
+- **Token counting & cost** — `openai_tokens`, `anthropic_tokens`, `gemini_tokens`, and a `cost` verb estimate tokens and dollars per row. OpenAI (`tiktoken`) and Gemini (the shared Gemma tokenizer) count exactly and offline; Anthropic uses its published char heuristic offline or the `count_tokens` API with `exact=True`.
 - **Top-K nearest-neighbour join** — `df.ann.knn(other, on="vector", k=5)` joins one DataFrame of embeddings against another, with a brute-force NumPy default and an optional [`usearch`](https://github.com/unum-cloud/usearch) HNSW backend for larger corpora.
 - **Powered by [LangChain](https://python.langchain.com/)** — you get the same retries, batching, and observability primitives the rest of the LangChain ecosystem uses, plumbed straight into a DataFrame.
 
@@ -57,6 +58,9 @@ pip install "polars-llm[gemini]"
 
 # Top-K nearest-neighbour joins (adds usearch + numpy)
 pip install "polars-llm[ann]"
+
+# Token counting & cost estimation (adds tiktoken + tokenizers)
+pip install "polars-llm[tokenizers]"
 
 # Or all of them
 pip install "polars-llm[all]"
@@ -175,7 +179,46 @@ queries.ann.knn(docs, on="vector", k=2)
 
 `backend="auto"` (default) uses brute-force NumPy under ~50k rows and switches to `usearch` HNSW for larger corpora when the `[ann]` extra is installed. Force one with `backend="brute"` or `backend="usearch"`. Pass `flat=False` to get a `neighbors: List[Struct]` column instead of a flat join. Lower `score` = closer match.
 
-### 7. Retries, caching, metadata
+### 7. Token counting & cost estimation
+
+Count tokens per row and turn them into an estimated dollar cost — without leaving Polars. Requires the `tokenizers` extra (`pip install "polars-llm[tokenizers]"`).
+
+```python
+df = pl.DataFrame({"prompt": ["Summarise polars in one sentence."]})
+
+df.with_columns(
+    # OpenAI: exact, local, offline (tiktoken — no API key)
+    pl.col("prompt").llm.openai_tokens(model="gpt-4o").alias("oa_tokens"),
+    # Gemini: exact, local, offline (the public Gemma tokenizer Gemini shares)
+    pl.col("prompt").llm.gemini_tokens(model="gemini-2.5-pro").alias("gm_tokens"),
+    # Anthropic: offline estimate (~3.5 chars/token); pass exact=True for the API
+    pl.col("prompt").llm.anthropic_tokens(model="claude-sonnet-4-6").alias("claude_est"),
+    # Dollars per row = tokens × price (provider inferred from the model name)
+    pl.col("prompt").llm.cost(model="gpt-4o", kind="input").alias("usd"),
+)
+```
+
+Methodology differs by provider, because their tokenizers do:
+
+| Provider      | Offline & exact? | How                                                                                                   |
+| ------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
+| **OpenAI**    | ✅ exact, local  | `tiktoken` (Rust-backed) — no API key, no network.                                                    |
+| **Gemini**    | ✅ exact, local  | Gemini shares the public **Gemma** SentencePiece tokenizer; counts match Google's API with no network. |
+| **Anthropic** | ⚠️ estimate      | Claude has **no public tokenizer**. Offline uses Anthropic's documented ~3.5-chars/token heuristic; pass `exact=True` for an API-accurate `count_tokens` call (needs the `anthropic` extra + API key). |
+
+`cost` multiplies the token count by a per-token price from `polars_llm.PRICES` (approximate published list prices). Override per call with `prices={...}` or globally by mutating `polars_llm.PRICES`:
+
+```python
+from polars_llm import PRICES, Price
+
+PRICES["gpt-4o"] = Price(input_per_1m=2.50, output_per_1m=10.00)  # USD per 1M tokens
+
+pl.col("answer").llm.cost(model="gpt-4o", kind="output")  # price a generated column at output rates
+```
+
+> The exact (`exact=True`) Anthropic/Gemini paths share the same `retries`, `backoff`, `max_concurrency`, and `cache` controls as the chat verbs (with `a`-prefixed async siblings `aanthropic_tokens` / `agemini_tokens`). The Gemma tokenizer is downloaded and cached on first Gemini use; point `tokenizer_path=` at a local file (or set `POLARS_LLM_GEMMA_TOKENIZER`) to skip the download.
+
+### 8. Retries, caching, metadata
 
 ```python
 pl.col("user_prompt").llm.aanthropic(
@@ -208,6 +251,19 @@ All methods live under the `.llm` namespace on any Polars expression that resolv
 | `gemini_embed` / `agemini_embed` | Google Gemini     | sync / async |
 
 > Anthropic does not currently offer a first-party embeddings API.
+
+### Token counting & cost verbs
+
+Require the `tokenizers` extra. Counting verbs return `Int64` (or a `Struct{tokens, elapsed_ms, error}` with `with_metadata=True`); `cost` returns `Float64`.
+
+| Method                                | Provider      | Offline default | Exact opt-in                  |
+| ------------------------------------- | ------------- | --------------- | ----------------------------- |
+| `openai_tokens`                       | OpenAI        | exact (tiktoken) | n/a (already exact)          |
+| `gemini_tokens` / `agemini_tokens`    | Google Gemini | exact (Gemma)   | `exact=True` → `count_tokens` API |
+| `anthropic_tokens` / `aanthropic_tokens` | Anthropic  | estimate (heuristic) | `exact=True` → `count_tokens` API |
+| `cost`                                | any           | —               | priced from `polars_llm.PRICES` |
+
+`cost(*, model, kind="input"|"output", provider=None, exact=False, prices=None, **token_kwargs)` infers the provider from `model` (override with `provider=`), counts tokens, and multiplies by the per-token price. `anthropic_tokens` also accepts `chars_per_token` (default `3.5`) to tune the offline heuristic. Pricing helpers `PRICES`, `Price`, and `price_per_token` are exported from `polars_llm`.
 
 ### DataFrame `.ann` namespace
 
@@ -249,6 +305,8 @@ All verbs are keyword-only and accept:
 | Chat (no `schema`)   | `Utf8`                                    | `Struct{content: Utf8, elapsed_ms: Float64, error: Utf8}`                     |
 | Chat (with `schema`) | `Struct{...}` matching the Pydantic model | Same struct; content JSON-serialised under `content`                          |
 | Embeddings           | `List[Float64]`                           | `Struct{vector: List[Float64], dim: Int64, elapsed_ms: Float64, error: Utf8}` |
+| Token counting       | `Int64`                                   | `Struct{tokens: Int64, elapsed_ms: Float64, error: Utf8}`                     |
+| Cost (`cost`)        | `Float64`                                 | —                                                                             |
 
 ## Tips and patterns
 
