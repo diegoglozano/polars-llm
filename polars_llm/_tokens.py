@@ -19,7 +19,7 @@ Anthropic     no public tokenizer        offline = Anthropic's documented heuris
 
 The tokenizer backends are an optional extra::
 
-    pip install polars-llm[tokenizers]
+    pip install polars-llm[tokens]
 """
 
 from __future__ import annotations
@@ -66,8 +66,8 @@ _TOKENS_METADATA_DTYPE = pl.Struct(_TOKENS_METADATA_FIELDS)
 def _require_tiktoken() -> Any:
     if _TIKTOKEN is None:
         raise ImportError(
-            "polars-llm: OpenAI token counting requires the optional `tokenizers` "
-            "extra. Install it with `pip install polars-llm[tokenizers]`.",
+            "polars-llm: OpenAI token counting requires the optional `tokens` "
+            "extra. Install it with `pip install polars-llm[tokens]`.",
         )
     return _TIKTOKEN
 
@@ -76,7 +76,7 @@ def _require_tokenizers() -> Any:
     if _TOKENIZERS is None:
         raise ImportError(
             "polars-llm: Gemini (local) token counting requires the optional "
-            "`tokenizers` extra. Install it with `pip install polars-llm[tokenizers]`.",
+            "`tokens` extra. Install it with `pip install polars-llm[tokens]`.",
         )
     return _TOKENIZERS
 

@@ -353,7 +353,7 @@ def test_tiktoken_extra_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_tokens_module, "_TIKTOKEN", None)
     _tokens_module._encoding_for.cache_clear()
     df = pl.DataFrame({"text": ["hi"]})
-    with pytest.raises(ImportError, match=r"polars-llm\[tokenizers\]"):
+    with pytest.raises(ImportError, match=r"polars-llm\[tokens\]"):
         df.with_columns(pl.col("text").llm.openai_tokens(model="gpt-4o").alias("n"))
     _tokens_module._encoding_for.cache_clear()
 
@@ -362,6 +362,6 @@ def test_tokenizers_extra_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_tokens_module, "_TOKENIZERS", None)
     _tokens_module._gemma_tokenizer.cache_clear()
     df = pl.DataFrame({"text": ["hi"]})
-    with pytest.raises(ImportError, match=r"polars-llm\[tokenizers\]"):
+    with pytest.raises(ImportError, match=r"polars-llm\[tokens\]"):
         df.with_columns(pl.col("text").llm.gemini_tokens(model="gemini-2.5-pro").alias("n"))
     _tokens_module._gemma_tokenizer.cache_clear()

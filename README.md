@@ -60,7 +60,7 @@ pip install "polars-llm[gemini]"
 pip install "polars-llm[ann]"
 
 # Token counting & cost estimation (adds tiktoken + tokenizers)
-pip install "polars-llm[tokenizers]"
+pip install "polars-llm[tokens]"
 
 # Or all of them
 pip install "polars-llm[all]"
@@ -181,7 +181,7 @@ queries.ann.knn(docs, on="vector", k=2)
 
 ### 7. Token counting & cost estimation
 
-Count tokens per row and turn them into an estimated dollar cost — without leaving Polars. Requires the `tokenizers` extra (`pip install "polars-llm[tokenizers]"`).
+Count tokens per row and turn them into an estimated dollar cost — without leaving Polars. Requires the `tokens` extra (`pip install "polars-llm[tokens]"`).
 
 ```python
 df = pl.DataFrame({"prompt": ["Summarise polars in one sentence."]})
@@ -254,7 +254,7 @@ All methods live under the `.llm` namespace on any Polars expression that resolv
 
 ### Token counting & cost verbs
 
-Require the `tokenizers` extra. Counting verbs return `Int64` (or a `Struct{tokens, elapsed_ms, error}` with `with_metadata=True`); `cost` returns `Float64`.
+Require the `tokens` extra. Counting verbs return `Int64` (or a `Struct{tokens, elapsed_ms, error}` with `with_metadata=True`); `cost` returns `Float64`.
 
 | Method                                | Provider      | Offline default | Exact opt-in                  |
 | ------------------------------------- | ------------- | --------------- | ----------------------------- |

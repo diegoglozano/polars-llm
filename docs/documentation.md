@@ -38,7 +38,7 @@ Embedding verbs return a `List[Float64]` column.
 
 ## Token counting & cost verbs
 
-Require the `tokenizers` extra (`pip install "polars-llm[tokenizers]"`).
+Require the `tokens` extra (`pip install "polars-llm[tokens]"`).
 
 | Method                                                   | Provider      | Offline default     |
 | -------------------------------------------------------- | ------------- | ------------------- |

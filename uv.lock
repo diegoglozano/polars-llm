@@ -2665,7 +2665,7 @@ openai = [
     { name = "langchain-openai", version = "0.3.35", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "langchain-openai", version = "1.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
-tokenizers = [
+tokens = [
     { name = "tiktoken" },
     { name = "tokenizers", version = "0.22.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "tokenizers", version = "0.23.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -2718,13 +2718,13 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'ann'", specifier = ">=1.23.0" },
     { name = "polars", specifier = ">=1.0.0" },
     { name = "tiktoken", marker = "extra == 'all'", specifier = ">=0.8.0" },
-    { name = "tiktoken", marker = "extra == 'tokenizers'", specifier = ">=0.8.0" },
+    { name = "tiktoken", marker = "extra == 'tokens'", specifier = ">=0.8.0" },
     { name = "tokenizers", marker = "extra == 'all'", specifier = ">=0.20.0" },
-    { name = "tokenizers", marker = "extra == 'tokenizers'", specifier = ">=0.20.0" },
+    { name = "tokenizers", marker = "extra == 'tokens'", specifier = ">=0.20.0" },
     { name = "usearch", marker = "extra == 'all'", specifier = ">=2.12.0" },
     { name = "usearch", marker = "extra == 'ann'", specifier = ">=2.12.0" },
 ]
-provides-extras = ["openai", "anthropic", "gemini", "ann", "tokenizers", "all"]
+provides-extras = ["openai", "anthropic", "gemini", "ann", "tokens", "all"]
 
 [package.metadata.requires-dev]
 dev = [
