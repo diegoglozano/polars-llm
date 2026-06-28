@@ -6,8 +6,23 @@ build-backend = "maturin"
 name = "polars-llm-accel"
 version = "0.0.1"
 description = "Native (Rust) token-counting accelerator for polars-llm."
+readme = "README.md"
+authors = [{ name = "Diego Garcia Lozano", email = "diegoglozano96@gmail.com" }]
+keywords = ["polars", "polars-llm", "tokens", "tiktoken", "rust", "plugin"]
 requires-python = ">=3.9"
-dependencies = ["polars>=1.0.0"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# A pyo3-polars plugin is compiled against a specific Polars ABI: this build
+# pins the Rust `polars 0.53.0` crate, which matches polars-python 1.40.x.
+# The bound makes pip fail fast on an incompatible Polars instead of erroring at
+# plugin-load time. Bump (here and in Cargo.toml) when targeting a newer Polars.
+dependencies = ["polars>=1.40,<1.41"]
+
+[project.urls]
+Repository = "https://github.com/diegoglozano/polars-llm"
 
 [tool.maturin]
 module-name = "polars_llm_accel._internal"
