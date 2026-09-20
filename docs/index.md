@@ -1,6 +1,6 @@
 ---
 title: polars-llm — LLM and embedding calls from Polars DataFrames
-description: Call OpenAI, Anthropic, and Gemini chat and embedding models from a Polars DataFrame, one row at a time, using native Polars expressions. Powered by LangChain.
+description: Call chat, TypeSafe decision, and embedding models from a Polars DataFrame using native Polars expressions.
 ---
 
 # polars-llm
@@ -10,7 +10,7 @@ description: Call OpenAI, Anthropic, and Gemini chat and embedding models from a
 [![Build status](https://img.shields.io/github/actions/workflow/status/diegoglozano/polars-llm/main.yml?branch=main)](https://github.com/diegoglozano/polars-llm/actions/workflows/main.yml?query=branch%3Amain)
 [![License](https://img.shields.io/github/license/diegoglozano/polars-llm)](https://github.com/diegoglozano/polars-llm/blob/main/LICENSE)
 
-**Call OpenAI, Anthropic, and Gemini models from a [Polars](https://pola.rs) DataFrame, one row at a time, using native Polars expressions.**
+**Call chat, TypeSafe decision, and embedding models from a [Polars](https://pola.rs) DataFrame, one row at a time, using native Polars expressions.**
 
 `polars-llm` registers an `.llm` namespace on Polars expressions so you can call any [LangChain](https://python.langchain.com/)-supported chat model or embedding model on every row of a DataFrame — synchronously or asynchronously — and pipe the responses straight back into your data pipeline.
 
@@ -32,6 +32,7 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 - **Sync and async** — `aopenai`, `aanthropic`, `agemini` fan out concurrently with `asyncio.gather`.
 - **Per-row prompts and system messages** — every argument can be a Polars expression.
 - **Structured outputs** — pass a Pydantic schema as `schema=` and get a struct column back.
+- **Typed decisions** — run TypeSafe `Choice`, `Score`, and `Noul` questions together and get probabilities and confidence as nested structs.
 - **Embeddings** — `openai_embed` and `gemini_embed` return `List[Float64]` columns.
 - **Powered by [LangChain](https://python.langchain.com/)**.
 
@@ -41,10 +42,11 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 pip install "polars-llm[openai]"
 pip install "polars-llm[anthropic]"
 pip install "polars-llm[gemini]"
+pip install "polars-llm[typesafe]"  # Python 3.10+
 pip install "polars-llm[all]"
 ```
 
-Requires Python 3.9+ and Polars 1.0+. Auth follows LangChain conventions: set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY` before importing.
+Requires Python 3.9+ and Polars 1.0+. TypeSafe support requires Python 3.10+. Set the API key environment variable for the provider you use, including `TYPESAFE_API_KEY` for TypeSafe.
 
 ## Quickstart
 
@@ -78,6 +80,24 @@ df.with_columns(
 ```python
 df.with_columns(
     pl.col("text").llm.openai_embed(model="text-embedding-3-small").alias("vector")
+)
+```
+
+### TypeSafe structured decisions
+
+```python
+from typesafe_sdk import Choice, Noul
+
+questions = {
+    "department": Choice(
+        instructions="Which team should handle this?",
+        criteria={"returns": "Exchanges", "billing": "Charges"},
+    ),
+    "urgent": Noul(instructions="Does this require attention today?"),
+}
+
+df.with_columns(
+    pl.col("ticket").llm.typesafe(questions=questions).alias("decision")
 )
 ```
 
