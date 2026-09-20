@@ -47,14 +47,15 @@ The source expression is evaluated as TypeSafe state. Pass `questions=` with any
 
 ## Vector helpers
 
-| Method | Description |
-| --- | --- |
+| Method                                 | Description                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | [`cosine`](#polars_llm.llm.Llm.cosine) | Compute cosine similarity with another vector expression or a literal vector. No provider call is made. |
 
 ## Nearest-neighbor joins
 
 `polars_llm` also registers an `.ann` namespace on DataFrames. Use `df.ann.knn(other, ...)` to return the closest rows from another DataFrame. Both vector columns must have matching dimensions and use `List[Float32/64]` or `Array[Float32/64, dim]` values.
 
+<!-- prettier-ignore -->
 ::: polars_llm._ann.Ann
 
 ## `polars_llm.Llm`

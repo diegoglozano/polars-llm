@@ -62,12 +62,12 @@ With `uv`, replace `pip install` with `uv add`. The optional `[ann]` extra insta
 
 Set the environment variable expected by your provider:
 
-| Provider | Environment variable |
-| --- | --- |
-| OpenAI | `OPENAI_API_KEY` |
-| Anthropic | `ANTHROPIC_API_KEY` |
-| Gemini | `GOOGLE_API_KEY` |
-| TypeSafe | `TYPESAFE_API_KEY` |
+| Provider  | Environment variable |
+| --------- | -------------------- |
+| OpenAI    | `OPENAI_API_KEY`     |
+| Anthropic | `ANTHROPIC_API_KEY`  |
+| Gemini    | `GOOGLE_API_KEY`     |
+| TypeSafe  | `TYPESAFE_API_KEY`   |
 
 For example:
 
