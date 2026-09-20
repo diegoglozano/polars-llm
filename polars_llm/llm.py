@@ -17,6 +17,7 @@ TypeSafe support is available through ``polars-llm[typesafe]`` on Python 3.10+.
 from __future__ import annotations
 
 import contextlib
+import importlib
 from collections.abc import Mapping
 from typing import Any
 
@@ -60,7 +61,9 @@ with contextlib.suppress(ImportError):  # pragma: no cover
     )
 
 with contextlib.suppress(ImportError):  # pragma: no cover
-    from typesafe_sdk import AsyncTypeSafeClient, TypeSafeClient  # ty: ignore[unresolved-import]
+    _typesafe_sdk = importlib.import_module("typesafe_sdk")
+    AsyncTypeSafeClient = _typesafe_sdk.AsyncTypeSafeClient
+    TypeSafeClient = _typesafe_sdk.TypeSafeClient
 
 
 def _require(provider: str, cls: Any, extra: str) -> Any:
