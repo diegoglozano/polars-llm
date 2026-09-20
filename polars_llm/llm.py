@@ -60,7 +60,7 @@ with contextlib.suppress(ImportError):  # pragma: no cover
     )
 
 with contextlib.suppress(ImportError):  # pragma: no cover
-    from typesafe_sdk import AsyncTypeSafeClient, TypeSafeClient
+    from typesafe_sdk import AsyncTypeSafeClient, TypeSafeClient  # ty: ignore[unresolved-import]
 
 
 def _require(provider: str, cls: Any, extra: str) -> Any:

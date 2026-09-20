@@ -38,10 +38,10 @@ Embedding verbs return a `List[Float64]` column.
 
 ## TypeSafe decision verbs
 
-| Method                                           | Provider            | Mode  |
-| ------------------------------------------------ | ------------------- | ----- |
-| [`typesafe`](#polars_llm.llm.Llm.typesafe)       | TypeSafe System One | sync  |
-| [`atypesafe`](#polars_llm.llm.Llm.atypesafe)     | TypeSafe System One | async |
+| Method                                       | Provider            | Mode  |
+| -------------------------------------------- | ------------------- | ----- |
+| [`typesafe`](#polars_llm.llm.Llm.typesafe)   | TypeSafe System One | sync  |
+| [`atypesafe`](#polars_llm.llm.Llm.atypesafe) | TypeSafe System One | async |
 
 The source expression is evaluated as TypeSafe state. Pass `questions=` with any mix of `Choice`, `Score`, and `Noul` questions. These methods return a nested struct with one answer field per question; `with_metadata=True` also includes the model, token usage, elapsed time, and error. Install them with `pip install "polars-llm[typesafe]"` on Python 3.10 or newer.
 

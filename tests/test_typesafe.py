@@ -106,8 +106,7 @@ def test_typesafe_accepts_struct_state_and_metadata() -> None:
     frame = pl.DataFrame({"ticket": ["charged twice"], "tier": ["business"]})
 
     output = frame.with_columns(
-        pl
-        .struct("ticket", "tier")
+        pl.struct("ticket", "tier")
         .llm.typesafe(questions=QUESTIONS, model="jev-test", client=client, with_metadata=True)
         .alias("result"),
     )
@@ -157,8 +156,7 @@ def test_typesafe_error_modes() -> None:
 
     with pytest.raises(Exception, match="temporary failure"):
         frame.with_columns(
-            pl
-            .col("ticket")
+            pl.col("ticket")
             .llm.typesafe(questions=QUESTIONS, client=FakeTypeSafeClient(fail_first=1), on_error="raise")
             .alias("decision"),
         )
