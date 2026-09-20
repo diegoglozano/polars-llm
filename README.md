@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/diegoglozano/polars-llm/branch/main/graph/badge.svg)](https://codecov.io/gh/diegoglozano/polars-llm)
 [![License](https://img.shields.io/github/license/diegoglozano/polars-llm)](https://github.com/diegoglozano/polars-llm/blob/main/LICENSE)
 
-**Call OpenAI, Anthropic, and Gemini models from a [Polars](https://pola.rs) DataFrame, one row at a time, using native Polars expressions.**
+**Call chat, TypeSafe decision, and embedding models from a [Polars](https://pola.rs) DataFrame, one row at a time, using native Polars expressions.**
 
 `polars-llm` registers an `.llm` namespace on Polars expressions so you can call any [LangChain](https://python.langchain.com/)-supported chat model or embedding model on every row of a DataFrame — synchronously or asynchronously — and pipe the responses straight back into your data pipeline.
 
@@ -34,6 +34,7 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 - **Sync and async** — every provider verb has an `a`-prefixed async sibling that fans out concurrently with `asyncio.gather` and an optional `max_concurrency` cap.
 - **Per-row prompts and system messages** — both the prompt and the system message can be Polars expressions, so you can build them from other columns.
 - **Structured outputs** — pass a Pydantic model as `schema=` to get a struct column back, parsed via LangChain's `with_structured_output`.
+- **Typed decisions** — evaluate TypeSafe `Choice`, `Score`, and `Noul` questions together and receive probability-aware nested struct columns.
 - **Embeddings, too** — `openai_embed` and `gemini_embed` return `List[Float64]` columns ready for vector search.
 - **Top-K nearest-neighbour join** — `df.ann.knn(other, on="vector", k=5)` joins one DataFrame of embeddings against another, with a brute-force NumPy default and an optional [`usearch`](https://github.com/unum-cloud/usearch) HNSW backend for larger corpora.
 - **Powered by [LangChain](https://python.langchain.com/)** — you get the same retries, batching, and observability primitives the rest of the LangChain ecosystem uses, plumbed straight into a DataFrame.
@@ -42,6 +43,7 @@ Common use cases:
 
 - Summarise, classify, translate, or extract structured fields from a column of text.
 - Score rows against a custom rubric using an LLM-as-judge.
+- Classify, score, and gate rows with TypeSafe System One decisions and confidence values.
 - Build embeddings for a corpus directly from a DataFrame, ready to write to a vector database.
 - Mix LLM calls with the rest of your pipeline (joins, filters, group-bys) without leaving Polars.
 
@@ -54,6 +56,7 @@ Common use cases:
 pip install "polars-llm[openai]"
 pip install "polars-llm[anthropic]"
 pip install "polars-llm[gemini]"
+pip install "polars-llm[typesafe]"  # Python 3.10+
 
 # Top-K nearest-neighbour joins (adds usearch + numpy)
 pip install "polars-llm[ann]"
@@ -67,7 +70,7 @@ uv add "polars-llm[all]"
 
 Requires Python 3.9+ and Polars 1.0+.
 
-Authentication follows LangChain conventions — set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY` in your environment before importing.
+Authentication follows each provider's conventions — set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, or `TYPESAFE_API_KEY` as appropriate.
 
 ## Quickstart
 
@@ -134,7 +137,40 @@ df.with_columns(
 ).unnest("sentiment")
 ```
 
-### 5. Embeddings
+### 5. TypeSafe structured decisions
+
+The source expression becomes the TypeSafe `state`. Ask several independent questions in one request and get a nested Polars struct containing typed answers, probabilities, and confidence:
+
+```python
+from typesafe_sdk import Choice, Noul, Score
+
+questions = {
+    "department": Choice(
+        instructions="Which team should handle this?",
+        criteria={
+            "returns": "Exchanges, wrong or damaged items",
+            "shipping": "Delivery status, delays, lost packages",
+            "billing": "Charges, invoices, payment problems",
+        },
+    ),
+    "urgency": Score(
+        instructions="How urgent is this ticket?",
+        criteria=["Can wait", "Needs attention today", "Customer is blocked"],
+    ),
+    "needs_reply": Noul(instructions="Does this ticket require a reply?"),
+}
+
+decisions = df.with_columns(
+    pl.col("ticket").llm.typesafe(questions=questions).alias("decision")
+).unnest("decision")
+
+# Async row evaluation with bounded concurrency:
+pl.col("ticket").llm.atypesafe(questions=questions, max_concurrency=20)
+```
+
+Question dictionaries in the [TypeSafe API request shape](https://docs.typesafe.ai/primitives/choice) are accepted too, and the state expression may be a string, struct, or other JSON-compatible Polars value. TypeSafe defaults to `jev-latest`; pass `model=` to override it.
+
+### 6. Embeddings
 
 ```python
 df.with_columns(
@@ -144,7 +180,7 @@ df.with_columns(
 )
 ```
 
-### 6. Top-K nearest-neighbour join
+### 7. Top-K nearest-neighbour join
 
 Once you have an embedding column on each side, `df.ann.knn` returns the `k` closest rows from `other` for every row of `df`:
 
@@ -175,7 +211,7 @@ queries.ann.knn(docs, on="vector", k=2)
 
 `backend="auto"` (default) uses brute-force NumPy under ~50k rows and switches to `usearch` HNSW for larger corpora when the `[ann]` extra is installed. Force one with `backend="brute"` or `backend="usearch"`. Pass `flat=False` to get a `neighbors: List[Struct]` column instead of a flat join. Lower `score` = closer match.
 
-### 7. Retries, caching, metadata
+### 8. Retries, caching, metadata
 
 ```python
 pl.col("user_prompt").llm.aanthropic(
@@ -208,6 +244,14 @@ All methods live under the `.llm` namespace on any Polars expression that resolv
 | `gemini_embed` / `agemini_embed` | Google Gemini     | sync / async |
 
 > Anthropic does not currently offer a first-party embeddings API.
+
+### Decision verbs
+
+| Method                   | Provider            | Mode         |
+| ------------------------ | ------------------- | ------------ |
+| `typesafe` / `atypesafe` | TypeSafe System One | sync / async |
+
+`questions=` is a mapping of answer names to TypeSafe `Choice`, `Score`, or `Noul` objects (or equivalent raw dictionaries). The default result is a nested `Struct`, with one field per question. `with_metadata=True` wraps it as `Struct{answers, model, input_tokens, output_tokens, elapsed_ms, error}`.
 
 ### DataFrame `.ann` namespace
 

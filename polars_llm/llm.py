@@ -1,21 +1,23 @@
 """The ``.llm`` Polars expression namespace.
 
 Importing :mod:`polars_llm` registers the namespace, after which any Polars
-expression that resolves to a string column gains a ``.llm`` accessor with one
-verb per provider (``openai``, ``anthropic``, ``gemini``) plus async variants
-(``aopenai``, ``aanthropic``, ``agemini``) and embedding variants
-(``openai_embed`` / ``gemini_embed`` and their async counterparts).
+expression gains a ``.llm`` accessor with one verb per provider (``openai``,
+``anthropic``, ``gemini``), TypeSafe System One decisions (``typesafe``),
+async variants, and embedding variants (``openai_embed`` / ``gemini_embed``
+and their async counterparts).
 
 Vector columns produced by the embedding verbs additionally gain a
 ``cosine`` helper that lowers to native Polars arithmetic (no API call).
 
 Provider SDKs are optional extras: install ``polars-llm[openai]``,
 ``polars-llm[anthropic]``, ``polars-llm[gemini]``, or ``polars-llm[all]``.
+TypeSafe support is available through ``polars-llm[typesafe]`` on Python 3.10+.
 """
 
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Mapping
 from typing import Any
 
 import polars as pl
@@ -30,6 +32,7 @@ from ._runtime import (
     embed_batch_sync,
     embed_map_batches,
 )
+from ._typesafe import typesafe_batch_async, typesafe_batch_sync, typesafe_map_batches
 
 # ---- Optional provider imports ----
 # Each name is set to None up front so it's a stable module attribute even when
@@ -41,6 +44,8 @@ OpenAIEmbeddings: Any = None
 ChatAnthropic: Any = None
 ChatGoogleGenerativeAI: Any = None
 GoogleGenerativeAIEmbeddings: Any = None
+TypeSafeClient: Any = None
+AsyncTypeSafeClient: Any = None
 
 with contextlib.suppress(ImportError):  # pragma: no cover - import guard
     from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -53,6 +58,9 @@ with contextlib.suppress(ImportError):  # pragma: no cover
         ChatGoogleGenerativeAI,
         GoogleGenerativeAIEmbeddings,
     )
+
+with contextlib.suppress(ImportError):  # pragma: no cover
+    from typesafe_sdk import AsyncTypeSafeClient, TypeSafeClient
 
 
 def _require(provider: str, cls: Any, extra: str) -> Any:
@@ -251,6 +259,90 @@ class Llm:
             dim=dim,
         )
 
+    # ---- internal TypeSafe dispatch ----
+    def _typesafe(
+        self,
+        *,
+        questions: Mapping[str, Any],
+        model: str | None,
+        client: Any,
+        retries: int,
+        backoff: float,
+        cache: bool,
+        with_metadata: bool,
+        on_error: OnError,
+        client_kwargs: dict[str, Any],
+    ) -> pl.Expr:
+        client_cls: Any = None if client is not None else _require("typesafe", TypeSafeClient, "typesafe")
+
+        def runner(states: list[Any]) -> list[dict[str, Any]]:
+            active_client = client if client is not None else client_cls(**client_kwargs)
+            try:
+                return typesafe_batch_sync(
+                    active_client,
+                    states,
+                    questions=questions,
+                    model=model,
+                    retries=retries,
+                    backoff=backoff,
+                    cache=cache,
+                )
+            finally:
+                if client is None:
+                    active_client.close()
+
+        return typesafe_map_batches(
+            self._prompt,
+            runner,
+            questions=questions,
+            with_metadata=with_metadata,
+            on_error=on_error,
+        )
+
+    def _atypesafe(
+        self,
+        *,
+        questions: Mapping[str, Any],
+        model: str | None,
+        client: Any,
+        retries: int,
+        backoff: float,
+        max_concurrency: int | None,
+        cache: bool,
+        with_metadata: bool,
+        on_error: OnError,
+        client_kwargs: dict[str, Any],
+    ) -> pl.Expr:
+        client_cls: Any = None if client is not None else _require("typesafe", AsyncTypeSafeClient, "typesafe")
+
+        async def run(states: list[Any]) -> list[dict[str, Any]]:
+            active_client = client if client is not None else client_cls(**client_kwargs)
+            try:
+                return await typesafe_batch_async(
+                    active_client,
+                    states,
+                    questions=questions,
+                    model=model,
+                    retries=retries,
+                    backoff=backoff,
+                    max_concurrency=max_concurrency,
+                    cache=cache,
+                )
+            finally:
+                if client is None:
+                    await active_client.aclose()
+
+        def runner(states: list[Any]) -> list[dict[str, Any]]:
+            return _arun(run(states))
+
+        return typesafe_map_batches(
+            self._prompt,
+            runner,
+            questions=questions,
+            with_metadata=with_metadata,
+            on_error=on_error,
+        )
+
     # ============================================================
     # Public chat verbs
     # ============================================================
@@ -426,6 +518,73 @@ class Llm:
             on_error=on_error,
         )
 
+    # ---- TypeSafe System One ----
+    def typesafe(
+        self,
+        *,
+        questions: Mapping[str, Any],
+        model: str | None = None,
+        client: Any = None,
+        retries: int = 0,
+        backoff: float = 0.0,
+        cache: bool = False,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+        **client_kwargs: Any,
+    ) -> pl.Expr:
+        """Evaluate TypeSafe Choice, Score, and Noul questions per row.
+
+        The expression is the TypeSafe ``state``. ``questions`` may contain
+        ``typesafe_sdk`` question objects or raw question dictionaries. By
+        default the result is a nested Struct containing the named answers;
+        ``with_metadata=True`` also includes model, token usage, timing, and
+        per-row errors. If ``client`` is omitted, remaining keyword arguments
+        are forwarded to ``typesafe_sdk.TypeSafeClient``.
+        """
+        return self._typesafe(
+            questions=questions,
+            model=model,
+            client=client,
+            retries=retries,
+            backoff=backoff,
+            cache=cache,
+            with_metadata=with_metadata,
+            on_error=on_error,
+            client_kwargs=client_kwargs,
+        )
+
+    def atypesafe(
+        self,
+        *,
+        questions: Mapping[str, Any],
+        model: str | None = None,
+        client: Any = None,
+        retries: int = 0,
+        backoff: float = 0.0,
+        max_concurrency: int | None = None,
+        cache: bool = False,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+        **client_kwargs: Any,
+    ) -> pl.Expr:
+        """Evaluate TypeSafe questions concurrently across each batch.
+
+        Uses ``typesafe_sdk.AsyncTypeSafeClient`` unless an async ``client``
+        is supplied. ``max_concurrency`` caps in-flight row evaluations.
+        """
+        return self._atypesafe(
+            questions=questions,
+            model=model,
+            client=client,
+            retries=retries,
+            backoff=backoff,
+            max_concurrency=max_concurrency,
+            cache=cache,
+            with_metadata=with_metadata,
+            on_error=on_error,
+            client_kwargs=client_kwargs,
+        )
+
     # ============================================================
     # Public embed verbs
     # ============================================================
@@ -590,7 +749,7 @@ class Llm:
             b = pl.lit(pl.Series("", [list(other)], dtype=list_dtype))
         else:
             raise TypeError(
-                "polars-llm: `cosine` expects a pl.Expr, pl.Series, or list of floats; " f"got {type(other).__name__}",
+                f"polars-llm: `cosine` expects a pl.Expr, pl.Series, or list of floats; got {type(other).__name__}",
             )
         dot = (a * b).list.sum()
         norm_a = (a * a).list.sum().sqrt()

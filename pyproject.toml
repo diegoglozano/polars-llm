@@ -1,7 +1,7 @@
 [project]
 name = "polars-llm"
 version = "0.0.1"
-description = "Call LLMs and embedding models from a Polars DataFrame, one row at a time, using native Polars expressions. Powered by LangChain."
+description = "Call LLMs, decision models, and embedding models from a Polars DataFrame using native Polars expressions."
 authors = [{ name = "Diego Garcia Lozano", email = "diegoglozano96@gmail.com" }]
 readme = "README.md"
 keywords = [
@@ -13,6 +13,7 @@ keywords = [
     "openai",
     "anthropic",
     "gemini",
+    "typesafe",
     "embeddings",
     "dataframe",
     "etl",
@@ -41,11 +42,13 @@ dependencies = [
 openai = ["langchain-openai>=0.2.0"]
 anthropic = ["langchain-anthropic>=0.2.0"]
 gemini = ["langchain-google-genai>=2.0.0"]
+typesafe = ["typesafe-sdk>=0.6.0; python_version >= '3.10'"]
 ann = ["usearch>=2.12.0", "numpy>=1.23.0"]
 all = [
     "langchain-openai>=0.2.0",
     "langchain-anthropic>=0.2.0",
     "langchain-google-genai>=2.0.0",
+    "typesafe-sdk>=0.6.0; python_version >= '3.10'",
     "usearch>=2.12.0",
     "numpy>=1.23.0",
 ]
@@ -71,6 +74,7 @@ dev = [
     "langchain-openai>=0.2.0",
     "langchain-anthropic>=0.2.0",
     "langchain-google-genai>=2.0.0",
+    "typesafe-sdk>=0.6.0; python_version >= '3.10'",
     "usearch>=2.12.0",
     "numpy>=1.23.0",
 ]
@@ -160,6 +164,7 @@ DEP002 = [
     "langchain-openai",
     "langchain-anthropic",
     "langchain-google-genai",
+    "typesafe-sdk",
     "usearch",
     "numpy",
 ]

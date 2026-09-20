@@ -1,7 +1,7 @@
 site_name: polars-llm
 repo_url: https://github.com/diegoglozano/polars-llm
 site_url: https://diegoglozano.github.io/polars-llm
-site_description: Call LLMs and embedding models from a Polars DataFrame, one row at a time, using native Polars expressions. Powered by LangChain.
+site_description: Call LLMs, TypeSafe decision models, and embedding models from a Polars DataFrame using native Polars expressions.
 site_author: Diego Garcia Lozano
 edit_uri: edit/main/docs/
 repo_name: diegoglozano/polars-llm
@@ -53,7 +53,7 @@ extra:
       link: https://pypi.org/project/polars-llm
   meta:
     - name: keywords
-      content: polars, polars llm, polars ai, langchain, openai, anthropic, gemini, dataframe llm, embeddings dataframe
+      content: polars, polars llm, polars ai, langchain, openai, anthropic, gemini, typesafe, system one, dataframe llm, embeddings dataframe
 
 markdown_extensions:
   - toc:
