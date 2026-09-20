@@ -10,8 +10,8 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Mapping, Sequence
-from typing import Any, Callable
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 import polars as pl
 
@@ -67,7 +67,7 @@ def typesafe_answers_dtype(questions: Mapping[str, Any]) -> pl.Struct:
             )
             continue
 
-        if not isinstance(criteria, Sequence) or isinstance(criteria, (str, bytes)) or len(criteria) < 2:
+        if not isinstance(criteria, Sequence) or isinstance(criteria, str | bytes) or len(criteria) < 2:
             raise ValueError(
                 f"polars-llm: Score question {name!r} requires at least two ordered criteria",
             )

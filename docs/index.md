@@ -42,11 +42,11 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 pip install "polars-llm[openai]"
 pip install "polars-llm[anthropic]"
 pip install "polars-llm[gemini]"
-pip install "polars-llm[typesafe]"  # Python 3.10+
+pip install "polars-llm[typesafe]"
 pip install "polars-llm[all]"
 ```
 
-Requires Python 3.9+ and Polars 1.0+. TypeSafe support requires Python 3.10+. Set the API key environment variable for the provider you use, including `TYPESAFE_API_KEY` for TypeSafe.
+Requires Python 3.10+ and Polars 1.0+. Set the API key environment variable for the provider you use, including `TYPESAFE_API_KEY` for TypeSafe.
 
 ## Quickstart
 
