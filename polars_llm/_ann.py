@@ -51,7 +51,7 @@ def _to_matrix(df: pl.DataFrame, col: str) -> np.ndarray:
         raise ValueError(f"polars-llm: column {col!r} not found in DataFrame.")
     series = df.get_column(col)
     dtype = series.dtype
-    if not (isinstance(dtype, (pl.List, pl.Array)) and dtype.inner in (pl.Float32, pl.Float64)):
+    if not (isinstance(dtype, pl.List | pl.Array) and dtype.inner in (pl.Float32, pl.Float64)):
         raise TypeError(
             f"polars-llm: column {col!r} must be List[Float32/64] or Array[Float32/64, dim]; got {dtype!r}.",
         )

@@ -56,7 +56,7 @@ Common use cases:
 pip install "polars-llm[openai]"
 pip install "polars-llm[anthropic]"
 pip install "polars-llm[gemini]"
-pip install "polars-llm[typesafe]"  # Python 3.10+
+pip install "polars-llm[typesafe]"
 
 # Top-K nearest-neighbour joins (adds usearch + numpy)
 pip install "polars-llm[ann]"
@@ -68,7 +68,7 @@ pip install "polars-llm[all]"
 uv add "polars-llm[all]"
 ```
 
-Requires Python 3.9+ and Polars 1.0+.
+Requires Python 3.10+ and Polars 1.0+.
 
 Authentication follows each provider's conventions — set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, or `TYPESAFE_API_KEY` as appropriate.
 

@@ -748,7 +748,7 @@ class Llm:
             b: pl.Expr = other.cast(list_dtype)
         elif isinstance(other, pl.Series):
             b = pl.lit(other).cast(list_dtype)
-        elif isinstance(other, (list, tuple)):
+        elif isinstance(other, list | tuple):
             b = pl.lit(pl.Series("", [list(other)], dtype=list_dtype))
         else:
             raise TypeError(

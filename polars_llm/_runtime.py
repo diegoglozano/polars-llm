@@ -11,7 +11,8 @@ import asyncio
 import json
 import time
 import warnings
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import nest_asyncio
 import polars as pl
@@ -42,11 +43,11 @@ def _arun(coro: Any) -> Any:
 
 
 def _hashable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool, bytes)):
+    if value is None or isinstance(value, str | int | float | bool | bytes):
         return value
     if isinstance(value, dict):
         return ("__d__", *sorted((k, _hashable(v)) for k, v in value.items()))
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return ("__l__", *(_hashable(v) for v in value))
     return repr(value)
 
@@ -533,7 +534,7 @@ def chat_map_batches(
     def _batch(s: pl.Series) -> pl.Series:
         prompts = s.struct.field("prompt").to_list()
         systems = s.struct.field("system").to_list()
-        rows = list(zip(prompts, systems))
+        rows = list(zip(prompts, systems, strict=False))
         results = runner(rows)
         return chat_results_to_series(
             results,
