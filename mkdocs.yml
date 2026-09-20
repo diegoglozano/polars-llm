@@ -9,6 +9,8 @@ copyright: Maintained by <a href="https://diegoglozano.com">diegoglozano</a>.
 
 nav:
   - Home: index.md
+  - Getting started: getting-started.md
+  - Examples: examples.md
   - API reference: documentation.md
 
 plugins:
@@ -25,8 +27,10 @@ plugins:
             heading_level: 3
 theme:
   name: material
-  feature:
-    tabs: true
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.tabs
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -56,6 +60,14 @@ extra:
       content: polars, polars llm, polars ai, langchain, openai, anthropic, gemini, typesafe, system one, dataframe llm, embeddings dataframe
 
 markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
   - toc:
       permalink: true
   - pymdownx.arithmatex:

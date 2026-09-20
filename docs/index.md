@@ -34,25 +34,27 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 - **Structured outputs** — pass a Pydantic schema as `schema=` and get a struct column back.
 - **Typed decisions** — run TypeSafe `Choice`, `Score`, and `Noul` questions together and get probabilities and confidence as nested structs.
 - **Embeddings** — `openai_embed` and `gemini_embed` return `List[Float64]` columns.
+- **Vector search** — compare vectors in an expression or run a top-K nearest-neighbor join between DataFrames.
 - **Powered by [LangChain](https://python.langchain.com/)**.
 
 ## Install
 
+Python 3.10 or newer is required. Python 3.9 is no longer supported.
+
 ```sh
 pip install "polars-llm[openai]"
-pip install "polars-llm[anthropic]"
-pip install "polars-llm[gemini]"
-pip install "polars-llm[typesafe]"
-pip install "polars-llm[all]"
 ```
 
-Requires Python 3.10+ and Polars 1.0+. Set the API key environment variable for the provider you use, including `TYPESAFE_API_KEY` for TypeSafe.
+Choose a different extra for Anthropic, Gemini, TypeSafe, or nearest-neighbor search. See [Getting started](getting-started.md#install-a-provider) for all installation options and environment variables.
 
 ## Quickstart
 
 ### Chat per row
 
 ```python
+import polars as pl
+import polars_llm  # noqa: F401
+
 df = (
     pl.DataFrame({"user_prompt": ["Capital of Spain?", "Capital of France?"]})
       .with_columns(
@@ -61,49 +63,15 @@ df = (
 )
 ```
 
-### Structured output
+The result is an ordinary DataFrame with a new `answer` column. From there it can be filtered, joined, grouped, or written with the rest of your Polars pipeline.
 
-```python
-from pydantic import BaseModel
+## Where next?
 
-class Sentiment(BaseModel):
-    label: str
-    confidence: float
+- [Getting started](getting-started.md) covers installation, authentication, and your first end-to-end pipeline.
+- [Examples](examples.md) has recipes for prompts built from columns, structured extraction, concurrent calls, embeddings, and vector search.
+- [API reference](documentation.md) lists every expression and DataFrame method.
 
-df.with_columns(
-    pl.col("review").llm.openai(model="gpt-4o-mini", schema=Sentiment).alias("s")
-).unnest("s")
-```
-
-### Embeddings
-
-```python
-df.with_columns(
-    pl.col("text").llm.openai_embed(model="text-embedding-3-small").alias("vector")
-)
-```
-
-### TypeSafe structured decisions
-
-```python
-from typesafe_sdk import Choice, Noul
-
-questions = {
-    "department": Choice(
-        instructions="Which team should handle this?",
-        criteria={"returns": "Exchanges", "billing": "Charges"},
-    ),
-    "urgent": Noul(instructions="Does this require attention today?"),
-}
-
-df.with_columns(
-    pl.col("ticket").llm.typesafe(questions=questions).alias("decision")
-)
-```
-
-See the full [API reference](documentation.md).
-
-## Links
+## Project links
 
 - **GitHub**: <https://github.com/diegoglozano/polars-llm>
 - **PyPI**: <https://pypi.org/project/polars-llm/>

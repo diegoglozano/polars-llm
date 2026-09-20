@@ -68,11 +68,13 @@ pip install "polars-llm[all]"
 uv add "polars-llm[all]"
 ```
 
-Requires Python 3.10+ and Polars 1.0+.
+Requires Python 3.10+ and Polars 1.0+. Python 3.9 is no longer supported.
 
 Authentication follows each provider's conventions — set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, or `TYPESAFE_API_KEY` as appropriate.
 
 ## Quickstart
+
+For a guided setup and more complete recipes, see [Getting started](https://diegoglozano.github.io/polars-llm/getting-started/) and [Examples](https://diegoglozano.github.io/polars-llm/examples/).
 
 ### 1. Chat completion per row
 

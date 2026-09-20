@@ -45,7 +45,8 @@ If you are proposing a new feature:
 # Get Started!
 
 Ready to contribute? Here's how to set up `polars-llm` for local development.
-Please note this documentation assumes you already have `uv` and `Git` installed and ready to go.
+Please note this documentation assumes you already have Python 3.10 or newer,
+`uv`, and Git installed and ready to go. Python 3.9 is no longer supported.
 
 1. Fork the `polars-llm` repo on GitHub.
 
