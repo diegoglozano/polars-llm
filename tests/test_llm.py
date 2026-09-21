@@ -165,6 +165,52 @@ def _patch_embed(monkeypatch: pytest.MonkeyPatch, attr: str, fake: Any) -> None:
 
 
 # --------------------------------------------------------------------------
+# Provider-agnostic verbs
+# --------------------------------------------------------------------------
+def test_generic_chat_uses_compatible_client() -> None:
+    fake = CallbackChat(lambda msgs: f"generic:{msgs[-1].content}")
+
+    df = pl.DataFrame({"prompt": ["hello", "world"]})
+    out = df.with_columns(pl.col("prompt").llm.chat(client=fake).alias("r"))
+
+    assert out["r"].to_list() == ["generic:hello", "generic:world"]
+    assert len(fake.calls) == 2
+
+
+def test_generic_achat_uses_compatible_client() -> None:
+    fake = CallbackChat(lambda msgs: msgs[-1].content, delay=0.01)
+
+    df = pl.DataFrame({"prompt": ["a", "b", "c"]})
+    out = df.with_columns(
+        pl.col("prompt").llm.achat(client=fake, max_concurrency=1).alias("r"),
+    )
+
+    assert out["r"].to_list() == ["a", "b", "c"]
+    assert fake.in_flight_max == 1
+
+
+def test_generic_embed_uses_compatible_client() -> None:
+    fake = CallbackEmbeddings(lambda text: [float(len(text)), 1.0])
+
+    df = pl.DataFrame({"text": ["a", "three"]})
+    out = df.with_columns(pl.col("text").llm.embed(client=fake).alias("v"))
+
+    assert out["v"].to_list() == [[1.0, 1.0], [5.0, 1.0]]
+
+
+def test_generic_aembed_uses_compatible_client() -> None:
+    fake = CallbackEmbeddings(lambda text: [float(len(text))])
+
+    df = pl.DataFrame({"text": ["a", "bb", "ccc"]})
+    out = df.with_columns(
+        pl.col("text").llm.aembed(client=fake, chunk_size=2, max_concurrency=1).alias("v"),
+    )
+
+    assert out["v"].to_list() == [[1.0], [2.0], [3.0]]
+    assert [len(call) for call in fake.doc_calls] == [2, 1]
+
+
+# --------------------------------------------------------------------------
 # Chat: basic verbs
 # --------------------------------------------------------------------------
 def test_openai_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:

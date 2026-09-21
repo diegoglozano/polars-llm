@@ -1,10 +1,9 @@
 """The ``.llm`` Polars expression namespace.
 
 Importing :mod:`polars_llm` registers the namespace, after which any Polars
-expression gains a ``.llm`` accessor with one verb per provider (``openai``,
-``anthropic``, ``gemini``), TypeSafe System One decisions (``typesafe``),
-async variants, and embedding variants (``openai_embed`` / ``gemini_embed``
-and their async counterparts).
+expression gains a ``.llm`` accessor with provider-agnostic chat and embedding
+verbs, convenience verbs for OpenAI, Anthropic, and Gemini, TypeSafe System
+One decisions, and async variants.
 
 Vector columns produced by the embedding verbs additionally gain a
 ``cosine`` helper that lowers to native Polars arithmetic (no API call).
@@ -350,6 +349,67 @@ class Llm:
     # Public chat verbs
     # ============================================================
 
+    # ---- Provider-agnostic ----
+    def chat(
+        self,
+        *,
+        client: Any,
+        system: str | pl.Expr | None = None,
+        schema: Any | None = None,
+        retries: int = 0,
+        backoff: float = 0.0,
+        cache: bool = False,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+    ) -> pl.Expr:
+        """Run chat completions with any LangChain-compatible client.
+
+        ``client`` must provide ``invoke``. When ``schema`` is supplied it
+        must also provide ``with_structured_output``. Use this method for
+        providers without a dedicated convenience verb, or for custom and
+        preconfigured chat clients.
+        """
+        return self._chat(
+            client,
+            system=system,
+            schema=schema,
+            retries=retries,
+            backoff=backoff,
+            cache=cache,
+            with_metadata=with_metadata,
+            on_error=on_error,
+        )
+
+    def achat(
+        self,
+        *,
+        client: Any,
+        system: str | pl.Expr | None = None,
+        schema: Any | None = None,
+        retries: int = 0,
+        backoff: float = 0.0,
+        max_concurrency: int | None = None,
+        cache: bool = False,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+    ) -> pl.Expr:
+        """Run chat completions concurrently with any compatible client.
+
+        ``client`` must provide ``ainvoke``. When ``schema`` is supplied it
+        must also provide ``with_structured_output``.
+        """
+        return self._achat(
+            client,
+            system=system,
+            schema=schema,
+            retries=retries,
+            backoff=backoff,
+            max_concurrency=max_concurrency,
+            cache=cache,
+            with_metadata=with_metadata,
+            on_error=on_error,
+        )
+
     # ---- OpenAI ----
     def openai(
         self,
@@ -367,8 +427,8 @@ class Llm:
     ) -> pl.Expr:
         """Run an OpenAI chat completion per row, sync."""
         chat = _make_chat("openai", model, client, model_kwargs)
-        return self._chat(
-            chat,
+        return self.chat(
+            client=chat,
             system=system,
             schema=schema,
             retries=retries,
@@ -395,8 +455,8 @@ class Llm:
     ) -> pl.Expr:
         """Run OpenAI chat completions concurrently across the batch."""
         chat = _make_chat("openai", model, client, model_kwargs)
-        return self._achat(
-            chat,
+        return self.achat(
+            client=chat,
             system=system,
             schema=schema,
             retries=retries,
@@ -424,8 +484,8 @@ class Llm:
     ) -> pl.Expr:
         """Run an Anthropic chat completion per row, sync."""
         chat = _make_chat("anthropic", model, client, model_kwargs)
-        return self._chat(
-            chat,
+        return self.chat(
+            client=chat,
             system=system,
             schema=schema,
             retries=retries,
@@ -452,8 +512,8 @@ class Llm:
     ) -> pl.Expr:
         """Run Anthropic chat completions concurrently across the batch."""
         chat = _make_chat("anthropic", model, client, model_kwargs)
-        return self._achat(
-            chat,
+        return self.achat(
+            client=chat,
             system=system,
             schema=schema,
             retries=retries,
@@ -481,8 +541,8 @@ class Llm:
     ) -> pl.Expr:
         """Run a Gemini chat completion per row, sync."""
         chat = _make_chat("gemini", model, client, model_kwargs)
-        return self._chat(
-            chat,
+        return self.chat(
+            client=chat,
             system=system,
             schema=schema,
             retries=retries,
@@ -509,8 +569,8 @@ class Llm:
     ) -> pl.Expr:
         """Run Gemini chat completions concurrently across the batch."""
         chat = _make_chat("gemini", model, client, model_kwargs)
-        return self._achat(
-            chat,
+        return self.achat(
+            client=chat,
             system=system,
             schema=schema,
             retries=retries,
@@ -592,6 +652,65 @@ class Llm:
     # Public embed verbs
     # ============================================================
 
+    # ---- Provider-agnostic ----
+    def embed(
+        self,
+        *,
+        client: Any,
+        retries: int = 0,
+        backoff: float = 0.0,
+        cache: bool = False,
+        chunk_size: int | None = None,
+        dim: int | None = None,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+    ) -> pl.Expr:
+        """Compute embeddings with any LangChain-compatible client.
+
+        ``client`` must provide ``embed_query`` and, when ``chunk_size`` is
+        supplied, ``embed_documents``.
+        """
+        return self._embed(
+            client,
+            retries=retries,
+            backoff=backoff,
+            cache=cache,
+            chunk_size=chunk_size,
+            dim=dim,
+            with_metadata=with_metadata,
+            on_error=on_error,
+        )
+
+    def aembed(
+        self,
+        *,
+        client: Any,
+        retries: int = 0,
+        backoff: float = 0.0,
+        max_concurrency: int | None = None,
+        cache: bool = False,
+        chunk_size: int | None = None,
+        dim: int | None = None,
+        with_metadata: bool = False,
+        on_error: OnError = "null",
+    ) -> pl.Expr:
+        """Compute embeddings concurrently with any compatible client.
+
+        ``client`` must provide ``aembed_query`` and, when ``chunk_size`` is
+        supplied, ``aembed_documents``.
+        """
+        return self._aembed(
+            client,
+            retries=retries,
+            backoff=backoff,
+            max_concurrency=max_concurrency,
+            cache=cache,
+            chunk_size=chunk_size,
+            dim=dim,
+            with_metadata=with_metadata,
+            on_error=on_error,
+        )
+
     def openai_embed(
         self,
         *,
@@ -614,8 +733,8 @@ class Llm:
         ``List(Float64)`` (catches dim drift, plays nicely with vector libs).
         """
         embedder = _make_embed("openai", model, client, model_kwargs)
-        return self._embed(
-            embedder,
+        return self.embed(
+            client=embedder,
             retries=retries,
             backoff=backoff,
             cache=cache,
@@ -647,8 +766,8 @@ class Llm:
         ``dim=N`` to return ``Array(Float64, N)`` instead of ``List(Float64)``.
         """
         embedder = _make_embed("openai", model, client, model_kwargs)
-        return self._aembed(
-            embedder,
+        return self.aembed(
+            client=embedder,
             retries=retries,
             backoff=backoff,
             max_concurrency=max_concurrency,
@@ -680,8 +799,8 @@ class Llm:
         ``Array(Float64, N)`` instead of ``List(Float64)``.
         """
         embedder = _make_embed("gemini", model, client, model_kwargs)
-        return self._embed(
-            embedder,
+        return self.embed(
+            client=embedder,
             retries=retries,
             backoff=backoff,
             cache=cache,
@@ -713,8 +832,8 @@ class Llm:
         ``dim=N`` to return ``Array(Float64, N)`` instead of ``List(Float64)``.
         """
         embedder = _make_embed("gemini", model, client, model_kwargs)
-        return self._aembed(
-            embedder,
+        return self.aembed(
+            client=embedder,
             retries=retries,
             backoff=backoff,
             max_concurrency=max_concurrency,
