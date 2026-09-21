@@ -15,7 +15,7 @@ A running list of features to consider for `polars-llm`. Ordered roughly by valu
 - Per-row metadata struct (`with_metadata=True` → `{content, elapsed_ms, error}` for chat, `{vector, dim, elapsed_ms, error}` for embed).
 - Configurable error handling: `on_error="null" | "raise"` with a `UserWarning` when failures are silently nulled.
 - Optional provider extras: `polars-llm[openai]`, `[anthropic]`, `[gemini]`, `[all]` so the base install stays light.
-- Bring-your-own client: pass any preconfigured LangChain chat / embeddings instance via `client=` to skip the in-tree constructor.
+- Provider-agnostic verbs: pass any preconfigured LangChain chat or embeddings instance to `chat` / `achat` or `embed` / `aembed`; provider verbs remain constructor conveniences and also accept `client=`.
 - `**model_kwargs` pass-through (temperature, max_tokens, timeout, base_url, …).
 - Cosine similarity helper (`pl.col("a").llm.cosine(pl.col("b"))`) that lowers to native Polars arithmetic — no API call.
 - ANN top-K join via `df.ann.knn(other, on="vector", k=5)`, with brute-force NumPy default and optional `usearch` backend (`polars-llm[ann]`). Supports `cosine` / `ip` / `l2`, flat or list-of-struct output.

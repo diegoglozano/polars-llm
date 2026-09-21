@@ -30,6 +30,7 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 
 - **Expression-native** — works inside `with_columns`, `select`, and any other Polars expression context.
 - **Sync and async** — `aopenai`, `aanthropic`, `agemini` fan out concurrently with `asyncio.gather`.
+- **Provider-agnostic clients** — `chat` / `achat` and `embed` / `aembed` accept any LangChain-compatible client.
 - **Per-row prompts and system messages** — every argument can be a Polars expression.
 - **Structured outputs** — pass a Pydantic schema as `schema=` and get a struct column back.
 - **Typed decisions** — run TypeSafe `Choice`, `Score`, and `Noul` questions together and get probabilities and confidence as nested structs.
@@ -64,6 +65,21 @@ df = (
 ```
 
 The result is an ordinary DataFrame with a new `answer` column. From there it can be filtered, joined, grouped, or written with the rest of your Polars pipeline.
+
+### Any LangChain-compatible provider
+
+Use the generic verbs when a provider does not have a dedicated convenience
+method:
+
+```python
+from langchain_ollama import ChatOllama
+
+chat = ChatOllama(model="llama3.2")
+
+df.with_columns(
+    pl.col("user_prompt").llm.chat(client=chat).alias("answer")
+)
+```
 
 ## Where next?
 

@@ -32,6 +32,7 @@ import polars_llm  # noqa: F401  — registers the `.llm` namespace
 
 - **Expression-native** — works inside `with_columns`, `select`, and any other Polars expression context. No Python `for` loops over rows, no notebook glue.
 - **Sync and async** — every provider verb has an `a`-prefixed async sibling that fans out concurrently with `asyncio.gather` and an optional `max_concurrency` cap.
+- **Provider-agnostic clients** — use `chat` / `achat` and `embed` / `aembed` with any LangChain-compatible client, including providers without a dedicated verb.
 - **Per-row prompts and system messages** — both the prompt and the system message can be Polars expressions, so you can build them from other columns.
 - **Structured outputs** — pass a Pydantic model as `schema=` to get a struct column back, parsed via LangChain's `with_structured_output`.
 - **Typed decisions** — evaluate TypeSafe `Choice`, `Score`, and `Noul` questions together and receive probability-aware nested struct columns.
@@ -182,6 +183,21 @@ df.with_columns(
 )
 ```
 
+The generic verbs accept any compatible LangChain chat or embedding client,
+so a provider does not need a dedicated `polars-llm` integration:
+
+```python
+from langchain_ollama import ChatOllama, OllamaEmbeddings
+
+chat = ChatOllama(model="llama3.2")
+embeddings = OllamaEmbeddings(model="nomic-embed-text")
+
+df.with_columns(
+    pl.col("text").llm.chat(client=chat).alias("answer"),
+    pl.col("text").llm.embed(client=embeddings).alias("vector"),
+)
+```
+
 ### 7. Top-K nearest-neighbour join
 
 Once you have an embedding column on each side, `df.ann.knn` returns the `k` closest rows from `other` for every row of `df`:
@@ -232,18 +248,20 @@ All methods live under the `.llm` namespace on any Polars expression that resolv
 
 ### Chat verbs
 
-| Method                     | Provider      | Mode         |
-| -------------------------- | ------------- | ------------ |
-| `openai` / `aopenai`       | OpenAI        | sync / async |
-| `anthropic` / `aanthropic` | Anthropic     | sync / async |
-| `gemini` / `agemini`       | Google Gemini | sync / async |
+| Method                     | Provider              | Mode         |
+| -------------------------- | --------------------- | ------------ |
+| `chat` / `achat`           | Any compatible client | sync / async |
+| `openai` / `aopenai`       | OpenAI                | sync / async |
+| `anthropic` / `aanthropic` | Anthropic             | sync / async |
+| `gemini` / `agemini`       | Google Gemini         | sync / async |
 
 ### Embedding verbs
 
-| Method                           | Provider          | Mode         |
-| -------------------------------- | ----------------- | ------------ |
-| `openai_embed` / `aopenai_embed` | OpenAI Embeddings | sync / async |
-| `gemini_embed` / `agemini_embed` | Google Gemini     | sync / async |
+| Method                           | Provider              | Mode         |
+| -------------------------------- | --------------------- | ------------ |
+| `embed` / `aembed`               | Any compatible client | sync / async |
+| `openai_embed` / `aopenai_embed` | OpenAI Embeddings     | sync / async |
+| `gemini_embed` / `agemini_embed` | Google Gemini         | sync / async |
 
 > Anthropic does not currently offer a first-party embeddings API.
 
@@ -276,10 +294,10 @@ The vector columns must be `List[Float32/64]` or `Array[Float32/64, dim]`, and d
 
 All verbs are keyword-only and accept:
 
-- **`model`** _(str)_ — model name forwarded to LangChain (e.g. `"gpt-4o-mini"`, `"claude-sonnet-4-6"`, `"gemini-2.5-pro"`).
+- **`model`** _(provider verbs, str)_ — model name forwarded to LangChain (e.g. `"gpt-4o-mini"`, `"claude-sonnet-4-6"`, `"gemini-2.5-pro"`).
 - **`system`** _(chat only)_ — literal string or `pl.Expr` for a per-row system prompt.
 - **`schema`** _(chat only)_ — a Pydantic model class. Returns a struct column with the schema fields, via `with_structured_output`.
-- **`client`** — a pre-configured LangChain chat or embeddings instance (skips the in-tree constructor and is handy for advanced configuration like custom base URLs).
+- **`client`** — a pre-configured LangChain chat or embeddings instance. It is required by the generic verbs and skips the in-tree constructor when passed to a provider verb.
 - **`retries`** _(int, default 0)_ — retry on any exception raised by the provider call.
 - **`backoff`** _(float, default 0.0)_ — exponential backoff base (seconds).
 - **`max_concurrency`** _(async only, int)_ — cap on in-flight requests via `asyncio.Semaphore`.
@@ -299,7 +317,7 @@ All verbs are keyword-only and accept:
 ## Tips and patterns
 
 - **Build prompts from columns** with `pl.format("Translate to {}: {}", pl.col("language"), pl.col("text"))`.
-- **Bring your own client** to share a single `ChatOpenAI` (with custom `base_url`, `organization`, etc.) across many calls — pass it as `client=`.
+- **Bring your own client** with `chat(client=...)` or `embed(client=...)`; use their `a`-prefixed counterparts for concurrent execution.
 - **Watch the warning** — when a request fails and is silently nulled, polars-llm emits a `UserWarning` so you don't ship a column of nulls by accident. Pass `with_metadata=True` to inspect per-row errors instead.
 - **Combine with lazy frames** — every verb is an expression, so it composes inside `LazyFrame.with_columns(...)`.
 
